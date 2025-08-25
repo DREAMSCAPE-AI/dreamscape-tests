@@ -1,0 +1,140 @@
+{
+  "generated": "2025-07-21T19:52:42.393Z",
+  "summary": {
+    "totalTests": 23,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "coverage": {
+      "lines": 0,
+      "functions": 0,
+      "branches": 0,
+      "statements": 0
+    }
+  },
+  "services": {
+    "voyage-service": {
+      "status": "has_tests",
+      "coverage": 85,
+      "tests": {
+        "unit": 5,
+        "integration": 3,
+        "e2e": 2
+      }
+    },
+    "web-client": {
+      "status": "has_tests",
+      "coverage": 75,
+      "tests": {
+        "unit": 8,
+        "integration": 0,
+        "e2e": 4
+      }
+    },
+    "panorama-service": {
+      "status": "basic_tests",
+      "coverage": 20,
+      "tests": {
+        "unit": 1,
+        "integration": 0,
+        "e2e": 0
+      }
+    },
+    "ai-service": {
+      "status": "no_tests",
+      "coverage": 0,
+      "tests": {
+        "unit": 0,
+        "integration": 0,
+        "e2e": 0
+      }
+    },
+    "auth-service": {
+      "status": "no_tests",
+      "coverage": 0,
+      "tests": {
+        "unit": 0,
+        "integration": 0,
+        "e2e": 0
+      }
+    },
+    "user-service": {
+      "status": "no_tests",
+      "coverage": 0,
+      "tests": {
+        "unit": 0,
+        "integration": 0,
+        "e2e": 0
+      }
+    },
+    "payment-service": {
+      "status": "no_tests",
+      "coverage": 0,
+      "tests": {
+        "unit": 0,
+        "integration": 0,
+        "e2e": 0
+      }
+    }
+  },
+  "testTypes": {
+    "unit": {
+      "total": 14,
+      "passed": 12,
+      "failed": 2,
+      "coverage": 60
+    },
+    "integration": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "coverage": 85
+    },
+    "e2e": {
+      "total": 6,
+      "passed": 5,
+      "failed": 1,
+      "coverage": "N/A"
+    },
+    "performance": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "coverage": "N/A"
+    },
+    "security": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "coverage": "N/A"
+    },
+    "accessibility": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "coverage": "N/A"
+    }
+  },
+  "recommendations": [
+    "Implement tests for ai-service, auth-service, user-service, and payment-service",
+    "Add contract tests between services",
+    "Implement performance testing suite",
+    "Add security testing automation",
+    "Implement accessibility testing",
+    "Improve test coverage for panorama-service"
+  ],
+  "coverage": {
+    "threshold": {
+      "lines": 70,
+      "functions": 70,
+      "branches": 70,
+      "statements": 70
+    },
+    "current": {
+      "lines": 45,
+      "functions": 48,
+      "branches": 35,
+      "statements": 46
+    }
+  }
+}
