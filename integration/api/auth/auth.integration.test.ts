@@ -1,14 +1,6 @@
 import request from 'supertest';
 
-// declare global {
-//   var expect: jest.Expect;
-//   var describe: jest.Describe;
-//   var it: jest.It;
-//   var beforeAll: jest.Lifecycle;
-//   var afterEach: jest.Lifecycle;
-// }
-
-const SERVER_URL: string = process.env.AUTH_SERVICE_URL || 'http://localhost:3000';
+const AUTH_SERVICE_URL: string = process.env.AUTH_SERVICE_URL!;
 
 interface User {
   id: string;
@@ -22,11 +14,11 @@ describe('Auth Service Integration Tests', () => {
   let testUser: User | undefined;
   let accessToken: string | undefined;
   let refreshTokenCookie: string | undefined;
-  const baseURL: string = SERVER_URL;
+  const authURL: string = AUTH_SERVICE_URL;
 
   beforeAll(async () => {
     try {
-      await request(baseURL).post('/api/v1/auth/test/reset').expect(200);
+      await request(authURL).post('/test/reset').expect(200);
     } catch (error) {
       console.warn('Test reset endpoint not available, continuing...');
     }
@@ -35,8 +27,8 @@ describe('Auth Service Integration Tests', () => {
   afterEach(async () => {
     try {
       if (testUser?.email) {
-        await request(baseURL)
-          .delete(`/api/v1/auth/test/users/${testUser.email}`)
+        await request(authURL)
+          .delete(`/test/users/${testUser.email}`)
           .send();
       }
     } catch (error) {
@@ -53,8 +45,8 @@ describe('Auth Service Integration Tests', () => {
         lastName: 'Test',
       };
 
-      const registerResponse = await request(baseURL)
-        .post('/api/v1/auth/register')
+      const registerResponse = await request(authURL)
+        .post('/register')
         .send(registrationData)
         .expect(201);
 
@@ -69,8 +61,8 @@ describe('Auth Service Integration Tests', () => {
       accessToken = registerResponse.body.data.tokens.accessToken;
       testUser = registerResponse.body.data.user;
 
-      const profileResponse = await request(baseURL)
-        .get('/api/v1/auth/profile')
+      const profileResponse = await request(authURL)
+        .get('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
@@ -81,8 +73,8 @@ describe('Auth Service Integration Tests', () => {
         phoneNumber: '+1234567890',
       };
 
-      const updateResponse = await request(baseURL)
-        .put('/api/v1/auth/profile')
+      const updateResponse = await request(authURL)
+        .put('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(updateData)
         .expect(200);
@@ -90,8 +82,8 @@ describe('Auth Service Integration Tests', () => {
       expect(updateResponse.body.data.user.firstName).toBe('UpdatedName');
       expect(updateResponse.body.data.user.phoneNumber).toBe('+1234567890');
 
-      const changePasswordResponse = await request(baseURL)
-        .post('/api/v1/auth/change-password')
+      const changePasswordResponse = await request(authURL)
+        .post('/change-password')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
           currentPassword: 'Password123!',
@@ -101,8 +93,8 @@ describe('Auth Service Integration Tests', () => {
 
       expect(changePasswordResponse.body.success).toBe(true);
 
-      const loginResponse = await request(baseURL)
-        .post('/api/v1/auth/login')
+      const loginResponse = await request(authURL)
+        .post('/login')
         .send({
           email: registrationData.email,
           password: 'NewPassword123!',
@@ -117,15 +109,15 @@ describe('Auth Service Integration Tests', () => {
         ? newRefreshCookie.find(cookie => cookie.startsWith('refreshToken='))
         : newRefreshCookie?.startsWith('refreshToken=') ? newRefreshCookie : undefined;
 
-      const logoutResponse = await request(baseURL)
-        .post('/api/v1/auth/logout')
+      const logoutResponse = await request(authURL)
+        .post('/logout')
         .set('Cookie', cookieValue as string)
         .expect(200);
 
       expect(logoutResponse.body.success).toBe(true);
 
-      await request(baseURL)
-        .get('/api/v1/auth/profile')
+      await request(authURL)
+        .get('/profile')
         .set('Authorization', `Bearer ${newAccessToken}`)
         .expect(401);
     }, 30000);
@@ -138,8 +130,8 @@ describe('Auth Service Integration Tests', () => {
         lastName: 'User',
       };
 
-      const registerResponse = await request(baseURL)
-        .post('/api/v1/auth/register')
+      const registerResponse = await request(authURL)
+        .post('/register')
         .send(userData)
         .expect(201);
 
@@ -150,8 +142,8 @@ describe('Auth Service Integration Tests', () => {
         ? initialRefreshCookie.find(cookie => cookie.startsWith('refreshToken='))
         : initialRefreshCookie?.startsWith('refreshToken=') ? initialRefreshCookie : undefined;
 
-      const refreshResponse = await request(baseURL)
-        .post('/api/v1/auth/refresh')
+      const refreshResponse = await request(authURL)
+        .post('/refresh')
         .set('Cookie', cookieHeader as string)
         .expect(200);
 
@@ -160,15 +152,15 @@ describe('Auth Service Integration Tests', () => {
 
       const newAccessToken = refreshResponse.body.data.tokens.accessToken;
 
-      const profileResponse = await request(baseURL)
-        .get('/api/v1/auth/profile')
+      const profileResponse = await request(authURL)
+        .get('/profile')
         .set('Authorization', `Bearer ${newAccessToken}`)
         .expect(200);
 
       expect(profileResponse.body.data.user.email).toBe(userData.email);
 
-      await request(baseURL)
-        .post('/api/v1/auth/refresh')
+      await request(authURL)
+        .post('/refresh')
         .set('Cookie', cookieHeader as string)
         .expect(401);
     }, 20000);
@@ -181,8 +173,8 @@ describe('Auth Service Integration Tests', () => {
         lastName: 'User',
       };
 
-      const registerResponse = await request(baseURL)
-        .post('/api/v1/auth/register')
+      const registerResponse = await request(authURL)
+        .post('/register')
         .send(userData)
         .expect(201);
 
@@ -194,8 +186,8 @@ describe('Auth Service Integration Tests', () => {
         rememberMe: true,
       };
 
-      const loginResponse = await request(baseURL)
-        .post('/api/v1/auth/login')
+      const loginResponse = await request(authURL)
+        .post('/login')
         .send(loginData)
         .expect(200);
 
@@ -206,8 +198,8 @@ describe('Auth Service Integration Tests', () => {
 
       expect(refreshCookieStr).toContain('Max-Age=2592000');
 
-      const shortLoginResponse = await request(baseURL)
-        .post('/api/v1/auth/login')
+      const shortLoginResponse = await request(authURL)
+        .post('/login')
         .send({ ...loginData, rememberMe: false })
         .expect(200);
 
@@ -231,8 +223,8 @@ describe('Auth Service Integration Tests', () => {
       ];
 
       for (const token of malformedTokens) {
-        await request(baseURL)
-          .get('/api/v1/auth/profile')
+        await request(authURL)
+          .get('/profile')
           .set('Authorization', token)
           .expect(401);
       }
@@ -247,8 +239,8 @@ describe('Auth Service Integration Tests', () => {
         password: 'ValidPass123!'
       };
 
-      await request(baseURL)
-        .post('/api/v1/auth/register')
+      await request(authURL)
+        .post('/register')
         .send(maliciousInputs)
         .expect(400);
     }, 10000);
@@ -259,8 +251,8 @@ describe('Auth Service Integration Tests', () => {
       
       for (let i = 0; i < 10; i++) {
         requests.push(
-          request(baseURL)
-            .post('/api/v1/auth/login')
+          request(authURL)
+            .post('/login')
             .send({
               email: testEmail,
               password: 'wrongpassword'
@@ -282,15 +274,15 @@ describe('Auth Service Integration Tests', () => {
         lastName: 'User',
       };
 
-      const registerResponse1 = await request(baseURL)
-        .post('/api/v1/auth/register')
+      const registerResponse1 = await request(authURL)
+        .post('/register')
         .send(userData)
         .expect(201);
 
       testUser = registerResponse1.body.data.user;
 
-      await request(baseURL)
-        .post('/api/v1/auth/register')
+      await request(authURL)
+        .post('/register')
         .send(userData)
         .expect(409); 
     }, 10000);
@@ -306,8 +298,8 @@ describe('Auth Service Integration Tests', () => {
       ];
 
       for (const password of weakPasswords) {
-        await request(baseURL)
-          .post('/api/v1/auth/register')
+        await request(authURL)
+          .post('/register')
           .send({
             email: `test${Date.now()}${Math.random()}@test.com`,
             password: password,
@@ -321,8 +313,8 @@ describe('Auth Service Integration Tests', () => {
 
   describe('Error Handling', () => {
     it('should handle invalid login credentials', async () => {
-      await request(baseURL)
-        .post('/api/v1/auth/login')
+      await request(authURL)
+        .post('/login')
         .send({
           email: `nonexistent-${Date.now()}@test.com`,
           password: 'wrongpassword'
@@ -331,8 +323,8 @@ describe('Auth Service Integration Tests', () => {
     });
 
     it('should handle missing required fields', async () => {
-      await request(baseURL)
-        .post('/api/v1/auth/register')
+      await request(authURL)
+        .post('/register')
         .send({
           password: 'Password123!',
           firstName: 'Test',
@@ -340,8 +332,8 @@ describe('Auth Service Integration Tests', () => {
         })
         .expect(400);
 
-      await request(baseURL)
-        .post('/api/v1/auth/login')
+      await request(authURL)
+        .post('/login')
         .send({
           email: 'test@test.com'
         })
@@ -349,8 +341,8 @@ describe('Auth Service Integration Tests', () => {
     });
 
     it('should handle expired or invalid refresh tokens', async () => {
-      await request(baseURL)
-        .post('/api/v1/auth/refresh')
+      await request(authURL)
+        .post('/refresh')
         .set('Cookie', 'refreshToken=invalid-token')
         .expect(401);
     });

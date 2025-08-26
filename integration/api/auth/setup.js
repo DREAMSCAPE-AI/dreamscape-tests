@@ -1,15 +1,19 @@
 const axios = require('axios');
+const path = require('path');
+
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 beforeAll(async () => {
   console.log('🚀 Setting up auth integration tests...');
 
   const maxRetries = 30;
   const retryDelay = 1000;
-  const serverUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:3000';
+  const serverUrl = process.env.BASE_SERVICE_URL;
+  const authServiceUrl = process.env.AUTH_SERVICE_URL;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      await axios.get(`${serverUrl}/health`, { timeout: 2000 });
+      await axios.get(`${serverUrl}/health`, { timeout: 5000 });
       console.log('✅ Auth service is ready');
       break;
     } catch (error) {
@@ -23,7 +27,7 @@ beforeAll(async () => {
   }
 
   try {
-    await axios.post(`${serverUrl}/api/v1/auth/test/reset`);
+    await axios.post(`${authServiceUrl}/test/reset`);
     console.log('✅ Test database reset via auth service');
   } catch (error) {
     console.error('❌ Failed to reset test database:', error.message);
@@ -35,7 +39,7 @@ afterAll(async () => {
   console.log('🧹 Cleaning up auth integration tests...');
 
   try {
-    await axios.post(`${process.env.AUTH_SERVICE_URL}/api/v1/auth/test/cleanup`);
+    await axios.post(`${authServiceUrl}/test/cleanup`);
     console.log('✅ Auth test cleanup completed via auth service');
   } catch (error) {
     console.error('⚠️ Cleanup error:', error.message);
