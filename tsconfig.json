@@ -17,7 +17,8 @@
     "emitDecoratorMetadata": true
   },
   "include": [
-    "integration/**/*",
+    "src",
+    "integration/**/*.ts",
     "performance/**/*",
     "security/**/*",
     "accessibility/**/*",
