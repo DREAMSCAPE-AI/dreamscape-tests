@@ -23,7 +23,7 @@ beforeAll(async () => {
   }
 
   try {
-    await axios.post(`${serverUrl}/api/v1/test/reset`);
+    await axios.post(`${serverUrl}/api/v1/auth/test/reset`);
     console.log('✅ Test database reset via auth service');
   } catch (error) {
     console.error('❌ Failed to reset test database:', error.message);
@@ -35,7 +35,7 @@ afterAll(async () => {
   console.log('🧹 Cleaning up auth integration tests...');
 
   try {
-    await axios.post(`${process.env.AUTH_SERVICE_URL || 'http://localhost:3000'}/api/v1/test/cleanup`);
+    await axios.post(`${process.env.AUTH_SERVICE_URL}/api/v1/auth/test/cleanup`);
     console.log('✅ Auth test cleanup completed via auth service');
   } catch (error) {
     console.error('⚠️ Cleanup error:', error.message);

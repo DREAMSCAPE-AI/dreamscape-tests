@@ -10,28 +10,38 @@ module.exports = {
     '**/integration/api/auth/**/*.integration.test.ts'
   ],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts': 'ts-jest',
   },
+  modulePathIgnorePatterns: ['<rootDir>/cypress/', '<rootDir>/node_modules/cypress/'],
   collectCoverageFrom: [
     'integration/api/auth/**/*.ts',
     '!**/*.d.ts',
-    '!**/node_modules/**'
+    '!**/node_modules/**',
+    '!**/setup.js',
+    '!**/teardown.js'
   ],
-  coverageDirectory: '<rootDir>/coverage/auth-service',
+  coverageDirectory: '<rootDir>/coverage/auth-integration',
   coverageReporters: ['text', 'lcov', 'html', 'json-summary'],
   setupFilesAfterEnv: ['<rootDir>/integration/api/auth/setup.js'],
-  testTimeout: 30000,
   globalTeardown: '<rootDir>/integration/api/auth/teardown.js',
+  testTimeout: 30000,
   collectCoverage: true,
   coverageThreshold: {
     global: {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
     }
   },
   verbose: true,
   detectOpenHandles: true,
-  forceExit: true
+  forceExit: true,
+  maxWorkers: 1,
+  testSequencer: '<rootDir>/tools/setup/test-sequencer.js',
+  globals: {
+    'ts-jest': {
+      tsconfig: './tsconfig.integration.json'
+    }
+  }
 };

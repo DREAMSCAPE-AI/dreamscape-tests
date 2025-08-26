@@ -23,7 +23,8 @@
     "security/**/*",
     "accessibility/**/*",
     "mocks/**/*",
-    "tools/**/*"
+    "tools/**/*",
+    "tsconfig.integration.json"
   ],
   "exclude": [
     "node_modules",

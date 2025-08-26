@@ -5,7 +5,7 @@ module.exports = async () => {
 
   try {
     console.log('🧹 Global teardown for auth tests...');
-    await axios.post(`${serverUrl}/api/v1/test/cleanup`);
+    await axios.post(`${serverUrl}/api/v1/auth/test/cleanup`);
     console.log('✅ Global auth teardown completed via auth service');
   } catch (error) {
     console.error('⚠️ Global teardown error:', error.message);

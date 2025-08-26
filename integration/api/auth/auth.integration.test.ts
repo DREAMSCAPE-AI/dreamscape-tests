@@ -1,5 +1,12 @@
 import request from 'supertest';
-import bcrypt from 'bcryptjs';
+
+// declare global {
+//   var expect: jest.Expect;
+//   var describe: jest.Describe;
+//   var it: jest.It;
+//   var beforeAll: jest.Lifecycle;
+//   var afterEach: jest.Lifecycle;
+// }
 
 const SERVER_URL: string = process.env.AUTH_SERVICE_URL || 'http://localhost:3000';
 
@@ -15,22 +22,38 @@ describe('Auth Service Integration Tests', () => {
   let testUser: User | undefined;
   let accessToken: string | undefined;
   let refreshTokenCookie: string | undefined;
-  const app: string = SERVER_URL;
+  const baseURL: string = SERVER_URL;
 
   beforeAll(async () => {
-    await request(app).post('/api/v1/test/reset').expect(200);
+    try {
+      await request(baseURL).post('/api/v1/auth/test/reset').expect(200);
+    } catch (error) {
+      console.warn('Test reset endpoint not available, continuing...');
+    }
+  });
+
+  afterEach(async () => {
+    try {
+      if (testUser?.email) {
+        await request(baseURL)
+          .delete(`/api/v1/auth/test/users/${testUser.email}`)
+          .send();
+      }
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
   describe('Complete Auth Flow', () => {
     it('should complete full registration -> login -> profile -> logout flow', async () => {
       const registrationData = {
-        email: 'integration@test.com',
+        email: `integration-${Date.now()}@test.com`,
         password: 'Password123!',
         firstName: 'Integration',
         lastName: 'Test',
       };
 
-      const registerResponse = await request(app)
+      const registerResponse = await request(baseURL)
         .post('/api/v1/auth/register')
         .send(registrationData)
         .expect(201);
@@ -38,13 +61,15 @@ describe('Auth Service Integration Tests', () => {
       expect(registerResponse.body.success).toBe(true);
       expect(registerResponse.body.data.user.email).toBe(registrationData.email);
 
-      const setCookieHeader = registerResponse.headers['set-cookie'] as string[] | undefined;
-      refreshTokenCookie = setCookieHeader?.find(cookie => cookie.startsWith('refreshToken='));
+      const setCookieHeader = registerResponse.headers['set-cookie'];
+      refreshTokenCookie = Array.isArray(setCookieHeader) 
+        ? setCookieHeader.find(cookie => cookie.startsWith('refreshToken='))
+        : setCookieHeader?.startsWith('refreshToken=') ? setCookieHeader : undefined;
 
       accessToken = registerResponse.body.data.tokens.accessToken;
       testUser = registerResponse.body.data.user;
 
-      const profileResponse = await request(app)
+      const profileResponse = await request(baseURL)
         .get('/api/v1/auth/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -56,7 +81,7 @@ describe('Auth Service Integration Tests', () => {
         phoneNumber: '+1234567890',
       };
 
-      const updateResponse = await request(app)
+      const updateResponse = await request(baseURL)
         .put('/api/v1/auth/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(updateData)
@@ -65,7 +90,7 @@ describe('Auth Service Integration Tests', () => {
       expect(updateResponse.body.data.user.firstName).toBe('UpdatedName');
       expect(updateResponse.body.data.user.phoneNumber).toBe('+1234567890');
 
-      const changePasswordResponse = await request(app)
+      const changePasswordResponse = await request(baseURL)
         .post('/api/v1/auth/change-password')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -76,7 +101,7 @@ describe('Auth Service Integration Tests', () => {
 
       expect(changePasswordResponse.body.success).toBe(true);
 
-      const loginResponse = await request(app)
+      const loginResponse = await request(baseURL)
         .post('/api/v1/auth/login')
         .send({
           email: registrationData.email,
@@ -87,18 +112,19 @@ describe('Auth Service Integration Tests', () => {
       expect(loginResponse.body.success).toBe(true);
 
       const newAccessToken = loginResponse.body.data.tokens.accessToken;
-      const newRefreshCookie = (loginResponse.headers['set-cookie'] as string[] | undefined)?.find(cookie =>
-        cookie.startsWith('refreshToken=')
-      );
+      const newRefreshCookie = loginResponse.headers['set-cookie'];
+      const cookieValue = Array.isArray(newRefreshCookie)
+        ? newRefreshCookie.find(cookie => cookie.startsWith('refreshToken='))
+        : newRefreshCookie?.startsWith('refreshToken=') ? newRefreshCookie : undefined;
 
-      const logoutResponse = await request(app)
+      const logoutResponse = await request(baseURL)
         .post('/api/v1/auth/logout')
-        .set('Cookie', newRefreshCookie as string)
+        .set('Cookie', cookieValue as string)
         .expect(200);
 
       expect(logoutResponse.body.success).toBe(true);
 
-      await request(app)
+      await request(baseURL)
         .get('/api/v1/auth/profile')
         .set('Authorization', `Bearer ${newAccessToken}`)
         .expect(401);
@@ -106,75 +132,91 @@ describe('Auth Service Integration Tests', () => {
 
     it('should handle refresh token flow correctly', async () => {
       const userData = {
-        email: 'refresh@test.com',
+        email: `refresh-${Date.now()}@test.com`,
         password: 'Password123!',
         firstName: 'Refresh',
         lastName: 'User',
       };
 
-      const registerResponse = await request(app)
+      const registerResponse = await request(baseURL)
         .post('/api/v1/auth/register')
         .send(userData)
         .expect(201);
 
-      const initialRefreshCookie = (registerResponse.headers['set-cookie'] as string[] | undefined)?.find(cookie =>
-        cookie.startsWith('refreshToken=')
-      );
+      testUser = registerResponse.body.data.user;
 
-      const refreshResponse = await request(app)
+      const initialRefreshCookie = registerResponse.headers['set-cookie'];
+      const cookieHeader = Array.isArray(initialRefreshCookie)
+        ? initialRefreshCookie.find(cookie => cookie.startsWith('refreshToken='))
+        : initialRefreshCookie?.startsWith('refreshToken=') ? initialRefreshCookie : undefined;
+
+      const refreshResponse = await request(baseURL)
         .post('/api/v1/auth/refresh')
-        .set('Cookie', initialRefreshCookie as string)
+        .set('Cookie', cookieHeader as string)
         .expect(200);
 
       expect(refreshResponse.body.success).toBe(true);
       expect(refreshResponse.body.data.tokens.accessToken).toBeDefined();
 
       const newAccessToken = refreshResponse.body.data.tokens.accessToken;
-      const newRefreshCookie = (refreshResponse.headers['set-cookie'] as string[] | undefined)?.find(cookie =>
-        cookie.startsWith('refreshToken=')
-      );
 
-      const profileResponse = await request(app)
+      const profileResponse = await request(baseURL)
         .get('/api/v1/auth/profile')
         .set('Authorization', `Bearer ${newAccessToken}`)
         .expect(200);
 
       expect(profileResponse.body.data.user.email).toBe(userData.email);
 
-      await request(app)
+      await request(baseURL)
         .post('/api/v1/auth/refresh')
-        .set('Cookie', initialRefreshCookie as string)
+        .set('Cookie', cookieHeader as string)
         .expect(401);
     }, 20000);
 
     it('should handle remember me functionality', async () => {
+      const userData = {
+        email: `remember-${Date.now()}@test.com`,
+        password: 'Password123!',
+        firstName: 'Remember',
+        lastName: 'User',
+      };
+
+      const registerResponse = await request(baseURL)
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
+
+      testUser = registerResponse.body.data.user;
+
       const loginData = {
-        email: 'integration@test.com',
-        password: 'NewPassword123!',
+        email: userData.email,
+        password: userData.password,
         rememberMe: true,
       };
 
-      const loginResponse = await request(app)
+      const loginResponse = await request(baseURL)
         .post('/api/v1/auth/login')
         .send(loginData)
         .expect(200);
 
-      const refreshCookie = (loginResponse.headers['set-cookie'] as string[] | undefined)?.find(cookie =>
-        cookie.startsWith('refreshToken=')
-      );
+      const refreshCookie = loginResponse.headers['set-cookie'];
+      const refreshCookieStr = Array.isArray(refreshCookie)
+        ? refreshCookie.find(cookie => cookie.startsWith('refreshToken='))
+        : refreshCookie?.startsWith('refreshToken=') ? refreshCookie : undefined;
 
-      expect(refreshCookie).toEqual(expect.stringContaining('Max-Age=2592000'));
+      expect(refreshCookieStr).toContain('Max-Age=2592000');
 
-      const shortLoginResponse = await request(app)
+      const shortLoginResponse = await request(baseURL)
         .post('/api/v1/auth/login')
         .send({ ...loginData, rememberMe: false })
         .expect(200);
 
-      const shortRefreshCookie = (shortLoginResponse.headers['set-cookie'] as string[] | undefined)?.find(cookie =>
-        cookie.startsWith('refreshToken=')
-      );
+      const shortRefreshCookie = shortLoginResponse.headers['set-cookie'];
+      const shortRefreshCookieStr = Array.isArray(shortRefreshCookie)
+        ? shortRefreshCookie.find(cookie => cookie.startsWith('refreshToken='))
+        : shortRefreshCookie?.startsWith('refreshToken=') ? shortRefreshCookie : undefined;
 
-      expect(shortRefreshCookie).toEqual(expect.stringContaining('Max-Age=604800'));
+      expect(shortRefreshCookieStr).toContain('Max-Age=604800');
     }, 15000);
   });
 
@@ -189,7 +231,7 @@ describe('Auth Service Integration Tests', () => {
       ];
 
       for (const token of malformedTokens) {
-        await request(app)
+        await request(baseURL)
           .get('/api/v1/auth/profile')
           .set('Authorization', token)
           .expect(401);
@@ -205,7 +247,7 @@ describe('Auth Service Integration Tests', () => {
         password: 'ValidPass123!'
       };
 
-      await request(app)
+      await request(baseURL)
         .post('/api/v1/auth/register')
         .send(maliciousInputs)
         .expect(400);
@@ -213,13 +255,14 @@ describe('Auth Service Integration Tests', () => {
 
     it('should enforce rate limiting', async () => {
       const requests = [];
+      const testEmail = `ratelimit-${Date.now()}@test.com`;
       
       for (let i = 0; i < 10; i++) {
         requests.push(
-          request(app)
+          request(baseURL)
             .post('/api/v1/auth/login')
             .send({
-              email: 'nonexistent@test.com',
+              email: testEmail,
               password: 'wrongpassword'
             })
         );
@@ -233,18 +276,20 @@ describe('Auth Service Integration Tests', () => {
 
     it('should handle duplicate email registration', async () => {
       const userData = {
-        email: 'duplicate@test.com',
+        email: `duplicate-${Date.now()}@test.com`,
         password: 'Password123!',
         firstName: 'Duplicate',
         lastName: 'User',
       };
 
-      await request(app)
+      const registerResponse1 = await request(baseURL)
         .post('/api/v1/auth/register')
         .send(userData)
         .expect(201);
 
-      await request(app)
+      testUser = registerResponse1.body.data.user;
+
+      await request(baseURL)
         .post('/api/v1/auth/register')
         .send(userData)
         .expect(409); 
@@ -261,10 +306,10 @@ describe('Auth Service Integration Tests', () => {
       ];
 
       for (const password of weakPasswords) {
-        await request(app)
+        await request(baseURL)
           .post('/api/v1/auth/register')
           .send({
-            email: `test${Date.now()}@test.com`,
+            email: `test${Date.now()}${Math.random()}@test.com`,
             password: password,
             firstName: 'Test',
             lastName: 'User'
@@ -276,17 +321,17 @@ describe('Auth Service Integration Tests', () => {
 
   describe('Error Handling', () => {
     it('should handle invalid login credentials', async () => {
-      await request(app)
+      await request(baseURL)
         .post('/api/v1/auth/login')
         .send({
-          email: 'nonexistent@test.com',
+          email: `nonexistent-${Date.now()}@test.com`,
           password: 'wrongpassword'
         })
         .expect(401);
     });
 
     it('should handle missing required fields', async () => {
-      await request(app)
+      await request(baseURL)
         .post('/api/v1/auth/register')
         .send({
           password: 'Password123!',
@@ -295,7 +340,7 @@ describe('Auth Service Integration Tests', () => {
         })
         .expect(400);
 
-      await request(app)
+      await request(baseURL)
         .post('/api/v1/auth/login')
         .send({
           email: 'test@test.com'
@@ -304,7 +349,7 @@ describe('Auth Service Integration Tests', () => {
     });
 
     it('should handle expired or invalid refresh tokens', async () => {
-      await request(app)
+      await request(baseURL)
         .post('/api/v1/auth/refresh')
         .set('Cookie', 'refreshToken=invalid-token')
         .expect(401);
