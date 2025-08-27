@@ -6,13 +6,14 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 beforeAll(async () => {
   console.log('🚀 Setting up auth integration tests...');
 
-  const maxRetries = 30;
+  const maxRetries = 10;
   const retryDelay = 1000;
   const serverUrl = process.env.BASE_SERVICE_URL;
   const authServiceUrl = process.env.AUTH_SERVICE_URL;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
+      console.log('serverUrl', serverUrl);
       await axios.get(`${serverUrl}/health`, { timeout: 5000 });
       console.log('✅ Auth service is ready');
       break;
@@ -37,8 +38,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   console.log('🧹 Cleaning up auth integration tests...');
+  const authServiceUrl = process.env.AUTH_SERVICE_URL;
 
   try {
+    console.log('authServiceUrl', authServiceUrl);
     await axios.post(`${authServiceUrl}/test/cleanup`);
     console.log('✅ Auth test cleanup completed via auth service');
   } catch (error) {

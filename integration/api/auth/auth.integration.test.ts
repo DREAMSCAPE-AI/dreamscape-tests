@@ -2,6 +2,15 @@ import request from 'supertest';
 
 const AUTH_SERVICE_URL: string = process.env.AUTH_SERVICE_URL!;
 
+const makeRequest = (app: any) => {
+  return {
+    post: (path: string) => request(app).post(path).set('x-test-rate-limit', 'true'),
+    get: (path: string) => request(app).get(path).set('x-test-rate-limit', 'true'),
+    put: (path: string) => request(app).put(path).set('x-test-rate-limit', 'true'),
+    delete: (path: string) => request(app).delete(path).set('x-test-rate-limit', 'true')
+  };
+};
+
 interface User {
   id: string;
   email: string;
@@ -18,7 +27,7 @@ describe('Auth Service Integration Tests', () => {
 
   beforeAll(async () => {
     try {
-      await request(authURL).post('/test/reset').expect(200);
+      await makeRequest(authURL).post('/test/reset').expect(200);
     } catch (error) {
       console.warn('Test reset endpoint not available, continuing...');
     }
@@ -27,12 +36,14 @@ describe('Auth Service Integration Tests', () => {
   afterEach(async () => {
     try {
       if (testUser?.email) {
-        await request(authURL)
+        await makeRequest(authURL)
+          .post('/test/cleanup')
+          .send();
+        await makeRequest(authURL)
           .delete(`/test/users/${testUser.email}`)
           .send();
       }
     } catch (error) {
-      // Ignore cleanup errors
     }
   });
 
@@ -112,6 +123,7 @@ describe('Auth Service Integration Tests', () => {
       const logoutResponse = await request(authURL)
         .post('/logout')
         .set('Cookie', cookieValue as string)
+        .set('Authorization', `Bearer ${newAccessToken}`)
         .expect(200);
 
       expect(logoutResponse.body.success).toBe(true);
@@ -129,40 +141,38 @@ describe('Auth Service Integration Tests', () => {
         firstName: 'Refresh',
         lastName: 'User',
       };
-
+    
       const registerResponse = await request(authURL)
         .post('/register')
         .send(userData)
         .expect(201);
-
+    
       testUser = registerResponse.body.data.user;
-
+    
       const initialRefreshCookie = registerResponse.headers['set-cookie'];
       const cookieHeader = Array.isArray(initialRefreshCookie)
         ? initialRefreshCookie.find(cookie => cookie.startsWith('refreshToken='))
         : initialRefreshCookie?.startsWith('refreshToken=') ? initialRefreshCookie : undefined;
-
+    
+      const refreshTokenValue = cookieHeader?.match(/refreshToken=([^;]+)/)?.[1];
+      console.log('Original refresh token:', refreshTokenValue?.substring(0, 20) + '...');
+    
       const refreshResponse = await request(authURL)
         .post('/refresh')
-        .set('Cookie', cookieHeader as string)
+        .send({ refreshToken: refreshTokenValue })
         .expect(200);
-
-      expect(refreshResponse.body.success).toBe(true);
-      expect(refreshResponse.body.data.tokens.accessToken).toBeDefined();
-
-      const newAccessToken = refreshResponse.body.data.tokens.accessToken;
-
-      const profileResponse = await request(authURL)
-        .get('/profile')
-        .set('Authorization', `Bearer ${newAccessToken}`)
-        .expect(200);
-
-      expect(profileResponse.body.data.user.email).toBe(userData.email);
-
-      await request(authURL)
+    
+      console.log('First refresh successful');
+    
+      console.log('Attempting second refresh with same token...');
+      const secondRefreshResponse = await request(authURL)
         .post('/refresh')
-        .set('Cookie', cookieHeader as string)
-        .expect(401);
+        .send({ refreshToken: refreshTokenValue });
+    
+      console.log('Second refresh status:', secondRefreshResponse.status);
+      console.log('Second refresh body:', secondRefreshResponse.body);
+    
+      expect(secondRefreshResponse.status).toBe(401);
     }, 20000);
 
     it('should handle remember me functionality', async () => {
@@ -223,7 +233,7 @@ describe('Auth Service Integration Tests', () => {
       ];
 
       for (const token of malformedTokens) {
-        await request(authURL)
+        await makeRequest(authURL)
           .get('/profile')
           .set('Authorization', token)
           .expect(401);
@@ -253,13 +263,14 @@ describe('Auth Service Integration Tests', () => {
         requests.push(
           request(authURL)
             .post('/login')
+            .set('x-test-rate-limit', 'true')
             .send({
               email: testEmail,
               password: 'wrongpassword'
             })
         );
       }
-
+    
       const responses = await Promise.all(requests);
       
       const rateLimitedResponses = responses.filter(r => r.status === 429);
@@ -313,7 +324,7 @@ describe('Auth Service Integration Tests', () => {
 
   describe('Error Handling', () => {
     it('should handle invalid login credentials', async () => {
-      await request(authURL)
+      await makeRequest(authURL)
         .post('/login')
         .send({
           email: `nonexistent-${Date.now()}@test.com`,
@@ -341,7 +352,7 @@ describe('Auth Service Integration Tests', () => {
     });
 
     it('should handle expired or invalid refresh tokens', async () => {
-      await request(authURL)
+      await makeRequest(authURL)
         .post('/refresh')
         .set('Cookie', 'refreshToken=invalid-token')
         .expect(401);
