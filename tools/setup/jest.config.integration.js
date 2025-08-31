@@ -7,7 +7,9 @@ module.exports = {
   roots: ['<rootDir>/integration'],
   testMatch: [
     '**/integration/api/auth/**/*.test.ts',
-    '**/integration/api/auth/**/*.integration.test.ts'
+    '**/integration/api/auth/**/*.integration.test.ts',
+    '**/integration/api/user/**/*.test.ts',
+    '**/integration/api/user/**/*.integration.test.ts'
   ],
   transform: {
     '^.+\\.ts': 'ts-jest',
