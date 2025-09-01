@@ -24,6 +24,15 @@ jobs:
         run: |
           cd dreamscape-tests
           npm install
+      - name: Clone dreamscape-frontend repository
+        run: |
+          git clone https://github.com/DREAMSCAPE-AI/dreamscape-frontend.git
+      - name: Clone dreamscape-services repository
+        run: |
+          git clone https://github.com/DREAMSCAPE-AI/dreamscape-services.git
+      - name: Clone dreamscape-infra repository
+        run: |
+          git clone https://github.com/DREAMSCAPE-AI/dreamscape-infra.git
       - name: Setup test environment
         run: |
           cd dreamscape-tests
