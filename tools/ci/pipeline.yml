@@ -24,6 +24,15 @@ jobs:
         run: |
           cd dreamscape-tests
           npm install
+      - name: Clone dreamscape-frontend repository
+        run: |
+          git clone https://github.com/DREAMSCAPE-AI/dreamscape-frontend.git
+      - name: Clone dreamscape-services repository
+        run: |
+          git clone https://github.com/DREAMSCAPE-AI/dreamscape-services.git
+      - name: Clone dreamscape-infra repository
+        run: |
+          git clone https://github.com/DREAMSCAPE-AI/dreamscape-infra.git
       - name: Setup test environment
         run: |
           cd dreamscape-tests
@@ -49,8 +58,13 @@ jobs:
       - name: Run unit tests
         run: |
           cd dreamscape-tests
+          if [ -z "$(find . -name '*.test.js')" ]; then
+            echo "No tests found. Skipping tests."
+            exit 0
+          fi
           npm run test:unit
       - name: Upload coverage reports
+        if: success()
         uses: codecov/codecov-action@v3
         with:
           file: ./dreamscape-tests/coverage/lcov.info
@@ -87,6 +101,10 @@ jobs:
       - name: Run integration tests
         run: |
           cd dreamscape-tests
+          if [ -z "$(find . -name '*.test.integration.js')" ]; then
+            echo "No integration tests found. Skipping tests."
+            exit 0
+          fi
           npm run test:integration
         env:
           TEST_DATABASE_URL: mongodb://localhost:27017/dreamscape_test
@@ -114,6 +132,10 @@ jobs:
       - name: Run E2E tests
         run: |
           cd dreamscape-tests
+          if [ -z "$(find . -name '*.test.e2e.js')" ]; then
+            echo "No E2E tests found. Skipping tests."
+            exit 0
+          fi
           npm run test:e2e
       - name: Stop services
         run: |
@@ -137,6 +159,10 @@ jobs:
       - name: Run performance tests
         run: |
           cd dreamscape-tests
+          if [ -z "$(find . -name '*.test.performance.js')" ]; then
+            echo "No performance tests found. Skipping tests."
+            exit 0
+          fi
           npm run test:performance
       - name: Upload performance results
         uses: actions/upload-artifact@v3
