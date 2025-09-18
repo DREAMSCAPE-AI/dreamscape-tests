@@ -1,0 +1,254 @@
+# Repository Dispatch CI/CD Trigger for Tests
+
+name: Trigger Central CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, feature/**, bugfix/**, hotfix/**]
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+env:
+  CENTRAL_REPO: DREAMSCAPE-AI/dreamscape-infra
+
+jobs:
+  trigger-central-pipeline:
+    name: Trigger Central CI/CD
+    runs-on: ubuntu-latest
+    # Skip on draft PRs unless ready for review
+    if: github.event.pull_request.draft != true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed test types
+        id: changes
+        run: |
+          CHANGED_TESTS=""
+          
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Get changed files in PR
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          else
+            # Get changed files in push
+            if [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.before }}..${{ github.event.after }})
+            else
+              # First push to branch, check last 10 commits
+              CHANGED_FILES=$(git diff --name-only HEAD~10..HEAD 2>/dev/null || git ls-files)
+            fi
+          fi
+          
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Detect which test types were changed
+          TEST_TYPES=()
+          
+          if echo "$CHANGED_FILES" | grep -q "^unit/"; then
+            TEST_TYPES+=("unit")
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^integration/"; then
+            TEST_TYPES+=("integration")
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^e2e/"; then
+            TEST_TYPES+=("e2e")
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -qE "^(performance/|load/)"; then
+            TEST_TYPES+=("performance")
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^security/"; then
+            TEST_TYPES+=("security")
+          fi
+          
+          # Join array elements with comma
+          if [[ ${#TEST_TYPES[@]} -gt 0 ]]; then
+            CHANGED_TESTS=$(IFS=','; echo "${TEST_TYPES[*]}")
+          else
+            # If files changed but no specific test type detected, run all tests
+            if [[ -n "$CHANGED_FILES" ]]; then
+              CHANGED_TESTS="all"
+            fi
+          fi
+          
+          echo "changed_tests=${CHANGED_TESTS}" >> $GITHUB_OUTPUT
+          echo "Detected changed test types: $CHANGED_TESTS"
+
+      - name: Determine environment
+        id: environment
+        run: |
+          ENVIRONMENT="dev"
+          
+          case "${{ github.ref }}" in
+            "refs/heads/main")
+              ENVIRONMENT="staging"  # Tests on main should run in staging
+              ;;
+            "refs/heads/develop")
+              ENVIRONMENT="staging"
+              ;;
+            *)
+              ENVIRONMENT="dev"
+              ;;
+          esac
+          
+          # For PRs, always use dev environment
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            ENVIRONMENT="dev"
+          fi
+          
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "Target environment: $ENVIRONMENT"
+
+      - name: Trigger central CI/CD pipeline
+        if: steps.changes.outputs.changed_tests != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DISPATCH_TOKEN }}
+          script: |
+            const eventType = 'tests-changed';
+            const payload = {
+              source_repo: context.repo.owner + '/' + context.repo.repo,
+              ref: context.ref,
+              sha: context.sha,
+              component: '${{ steps.changes.outputs.changed_tests }}',
+              environment: '${{ steps.environment.outputs.environment }}',
+              trigger_type: '${{ github.event_name }}',
+              actor: context.actor,
+              workflow_run_id: context.runId
+            };
+            
+            console.log('Triggering central pipeline with payload:', payload);
+            
+            try {
+              const response = await github.rest.repos.createDispatchEvent({
+                owner: 'DREAMSCAPE-AI',
+                repo: 'dreamscape-infra',
+                event_type: eventType,
+                client_payload: payload
+              });
+              
+              console.log('✅ Central pipeline triggered successfully');
+              
+              // Update commit status
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: 'pending',
+                target_url: `https://github.com/DREAMSCAPE-AI/dreamscape-infra/actions`,
+                description: 'Central CI/CD pipeline triggered',
+                context: 'ci/central-pipeline'
+              });
+              
+            } catch (error) {
+              console.error('❌ Failed to trigger central pipeline:', error);
+              
+              // Update commit status with failure
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: 'error',
+                description: 'Failed to trigger central CI/CD pipeline',
+                context: 'ci/central-pipeline'
+              });
+              
+              throw error;
+            }
+
+  local-validation:
+    name: Local Test Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Basic test validation
+        run: |
+          echo "🔍 Running basic validation for test suite..."
+          
+          # Check test structure
+          for test_type in unit integration e2e performance security; do
+            if [ -d "$test_type" ]; then
+              echo "✅ $test_type tests directory found"
+              
+              # Check for package.json in test directory
+              if [ -f "$test_type/package.json" ]; then
+                echo "✅ package.json found in $test_type"
+                
+                # Quick validation
+                cd "$test_type"
+                if npm run lint --if-present &>/dev/null; then
+                  echo "✅ Lint passed for $test_type tests"
+                else
+                  echo "⚠️ Lint issues in $test_type tests (non-blocking)"
+                fi
+                cd ..
+              fi
+              
+              # Count test files
+              TEST_COUNT=$(find "$test_type" -name "*.test.*" -o -name "*.spec.*" | wc -l)
+              echo "📊 Found $TEST_COUNT test files in $test_type"
+            fi
+          done
+          
+          # Check for main package.json
+          if [ -f "package.json" ]; then
+            echo "✅ Main package.json found"
+            
+            # Check for common test scripts
+            if grep -q '"test"' package.json; then
+              echo "✅ Test script found"
+            fi
+            
+            if grep -q '"test:integration"' package.json; then
+              echo "✅ Integration test script found"
+            fi
+            
+            if grep -q '"test:e2e"' package.json; then
+              echo "✅ E2E test script found"
+            fi
+          fi
+          
+          echo "✅ Local test validation completed"
+
+  summary:
+    name: Trigger Summary
+    runs-on: ubuntu-latest
+    needs: [trigger-central-pipeline, local-validation]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "📊 TESTS TRIGGER SUMMARY"
+          echo "======================="
+          echo "Repository: ${{ github.repository }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo ""
+          echo "Results:"
+          echo "- Central Pipeline Trigger: ${{ needs.trigger-central-pipeline.result }}"
+          echo "- Local Validation: ${{ needs.local-validation.result }}"
+          
+          if [[ "${{ needs.trigger-central-pipeline.result }}" == "success" ]]; then
+            echo "✅ Central CI/CD pipeline successfully triggered"
+            echo "🔗 Check progress: https://github.com/DREAMSCAPE-AI/dreamscape-infra/actions"
+          else
+            echo "❌ Failed to trigger central CI/CD pipeline"
+          fi
