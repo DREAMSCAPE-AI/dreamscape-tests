@@ -1,0 +1,10 @@
+Testing central pipeline after permissions fix for Repository Dispatch
+
+This test file validates that:
+- Repository Dispatch triggers correctly for test changes
+- Central pipeline processes tests-changed events  
+- Commit status updates to success
+- PR becomes mergeable
+
+Timestamp: 2025-09-18T20:27:00Z
+Fix applied: DISPATCH_TOKEN permissions for cross-repo status updates
