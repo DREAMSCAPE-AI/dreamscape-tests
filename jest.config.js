@@ -8,7 +8,9 @@ module.exports = {
   // Test file patterns
   testMatch: [
     '<rootDir>/tests/**/*.test.js',
-    '<rootDir>/tests/**/*.spec.js'
+    '<rootDir>/tests/**/*.spec.js',
+    '<rootDir>/tests/**/*.test.ts',
+    '<rootDir>/tests/**/*.spec.ts'
   ],
   
   // Setup files
@@ -47,12 +49,14 @@ module.exports = {
   
   // Transform files
   transform: {
-    '^.+\\.(js|ts|tsx)$': ['ts-jest', {
+    '^.+\\.ts$': ['ts-jest', {
       useESM: false,
       tsconfig: {
-        module: 'commonjs'
+        module: 'commonjs',
+        allowJs: true
       }
-    }]
+    }],
+    '^.+\\.js$': 'babel-jest'
   },
   
   // Module file extensions
