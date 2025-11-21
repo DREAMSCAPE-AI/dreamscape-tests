@@ -7,6 +7,8 @@
  * Prérequis: Kafka doit être démarré via docker-compose.kafka.yml
  */
 
+/// <reference types="jest" />
+
 import { Kafka, Producer, Consumer, Admin } from 'kafkajs';
 
 // Configuration Kafka pour les tests
