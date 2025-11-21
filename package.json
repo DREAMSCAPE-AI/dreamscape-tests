@@ -7,7 +7,8 @@
     "test": "npm run test:working && npm run test:e2e",
     "test:working": "jest --testPathPattern=\"(simple-test|mock-service).test.js\" --forceExit",
     "test:unit": "jest --testPathPattern=unit-tests",
-    "test:integration": "npm run test:integration:auth && npm run test:integration:user",
+    "test:integration": "npm run test:integration:auth && npm run test:integration:user && npm run test:integration:kafka",
+    "test:integration:kafka": "jest --config=./integration/kafka/jest.config.kafka.js",
     "test:integration:auth": "jest --config=./tools/setup/jest.config.integration.js --testPathPattern=\"integration/api/auth\"",
     "test:integration:user": "jest --config=./tools/setup/jest.config.integration.js --testPathPattern=\"integration/api/user\"",
     "test:e2e": "npm run test:e2e:voyage && npm run test:e2e:web",
@@ -46,6 +47,7 @@
     "ci": "npm run setup && npm run test:all && npm run report"
   },
   "dependencies": {
+    "kafkajs": "^2.2.4",
     "@prisma/client": "^6.14.0",
     "@types/node": "^20.8.0",
     "cypress": "^13.3.0",
