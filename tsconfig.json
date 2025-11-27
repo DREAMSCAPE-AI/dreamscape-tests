@@ -17,12 +17,14 @@
     "emitDecoratorMetadata": true
   },
   "include": [
-    "integration/**/*",
+    "src",
+    "integration/**/*.ts",
     "performance/**/*",
     "security/**/*",
     "accessibility/**/*",
     "mocks/**/*",
-    "tools/**/*"
+    "tools/**/*",
+    "tsconfig.integration.json"
   ],
   "exclude": [
     "node_modules",
