@@ -16,6 +16,9 @@
     "test:health:integration": "jest --config=jest.config.health.js --testPathPattern=integration/health",
     "test:health:coverage": "jest --config=jest.config.health.js --coverage",
     "test:health:watch": "jest --config=jest.config.health.js --watch",
+    "test:health:realdb": "jest --config=jest.config.realdb.js",
+    "test:health:realdb:auth": "jest --config=jest.config.realdb.js --testPathPattern=auth-health",
+    "test:health:realdb:verbose": "jest --config=jest.config.realdb.js --verbose",
     "test:performance": "npm run test:performance:api && npm run test:performance:frontend",
     "test:performance:api": "echo 'API performance tests - to be implemented'",
     "test:performance:frontend": "echo 'Frontend performance tests - to be implemented'",
@@ -28,7 +31,7 @@
     "test:coverage:all-services": "npm run test:coverage:ai && npm run test:coverage:auth && npm run test:coverage:user && npm run test:coverage:payment && npm run test:coverage:voyage && npm run test:coverage:web && npm run test:coverage:panorama",
     "test:coverage:ai": "jest --config=jest.config.coverage.js --testPathPattern=\"ai-service\" --coverageDirectory=coverage/ai-service",
     "test:coverage:auth": "jest --config=jest.config.coverage.js --testPathPattern=\"auth-service\" --coverageDirectory=coverage/auth-service",
-    "test:coverage:user": "jest --config=jest.config.coverage.js --testPathPattern=\"user-service\" --coverageDirectory=coverage/user-service", 
+    "test:coverage:user": "jest --config=jest.config.coverage.js --testPathPattern=\"user-service\" --coverageDirectory=coverage/user-service",
     "test:coverage:payment": "jest --config=jest.config.coverage.js --testPathPattern=\"payment-service\" --coverageDirectory=coverage/payment-service",
     "test:coverage:voyage": "jest --config=jest.config.coverage.js --testPathPattern=\"voyage-service\" --coverageDirectory=coverage/voyage-service",
     "test:coverage:web": "jest --config=jest.config.coverage.js --testPathPattern=\"web-client\" --coverageDirectory=coverage/web-client",
@@ -52,6 +55,7 @@
     "typescript": "^5.2.2"
   },
   "devDependencies": {
+    "@prisma/client": "^7.0.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

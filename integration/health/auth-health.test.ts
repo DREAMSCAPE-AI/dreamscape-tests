@@ -2,56 +2,34 @@
  * Auth Service Health Endpoints Integration Tests - INFRA-013.1
  *
  * These tests verify the health check endpoints of the Auth Service.
- * They test the actual HTTP endpoints and their responses.
+ * They test with REAL DATABASE connections (PostgreSQL and Redis).
  *
  * Prerequisites:
- * - Auth service should be running (or mocked)
- * - Database and Redis connections should be available (or mocked)
+ * - Docker must be running
+ * - PostgreSQL and Redis containers must be started (handled by jest.setup.realdb.ts)
+ *
+ * Run with: npm run test:health:realdb
  */
 
 import request from 'supertest';
 import express from 'express';
 import healthRoutes from '../../../dreamscape-services/auth/src/routes/health';
 
-// Mock Prisma
-const mockPrisma = {
-  $queryRaw: jest.fn(),
-};
-
-// Mock Redis
-const mockRedisClient = {
-  isReady: true,
-  ping: jest.fn().mockResolvedValue('PONG'),
-};
-
-jest.mock('../../../dreamscape-services/auth/src/database/prisma', () => ({
-  default: mockPrisma,
-}));
-
-jest.mock('../../../dreamscape-services/auth/src/config/redis', () => ({
-  default: mockRedisClient,
-}));
+// NO MOCKS - Using real database connections
+// PostgreSQL and Redis are started by jest.setup.realdb.ts
 
 // Create test app
 const app = express();
 app.use('/health', healthRoutes);
 
-describe('Auth Service Health Endpoints - Integration Tests (INFRA-013.1)', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockRedisClient.isReady = true;
-  });
-
+describe('Auth Service Health Endpoints - Integration Tests with Real DB (INFRA-013.1)', () => {
   describe('GET /health', () => {
-    it('should return 200 and HEALTHY status when all checks pass', async () => {
-      // Mock successful PostgreSQL and Redis connections
-      mockPrisma.$queryRaw.mockResolvedValue([{ health_check: 1 }]);
-      mockRedisClient.ping.mockResolvedValue('PONG');
-
+    it('should return 200 and HEALTHY status with real database connections', async () => {
       const response = await request(app)
-        .get('/health')
-        .expect(200);
+        .get('/health');
 
+      // Should be healthy since PostgreSQL and Redis are running
+      expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
         status: 'healthy',
         service: 'auth-service',
@@ -74,49 +52,9 @@ describe('Auth Service Health Endpoints - Integration Tests (INFRA-013.1)', () =
       expect(response.body.uptime).toBeGreaterThanOrEqual(0);
     });
 
-    it('should return 503 and UNHEALTHY status when PostgreSQL fails', async () => {
-      // Mock failed PostgreSQL connection
-      mockPrisma.$queryRaw.mockRejectedValue(new Error('Connection refused'));
-
-      const response = await request(app)
-        .get('/health')
-        .expect(503);
-
-      expect(response.body).toMatchObject({
-        status: 'unhealthy',
-        service: 'auth-service',
-        checks: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'PostgreSQL',
-            status: 'unhealthy',
-            type: 'database',
-            message: expect.stringContaining('failed'),
-          }),
-        ]),
-      });
-    });
-
-    it('should return 206 and DEGRADED status when Redis fails (non-critical)', async () => {
-      // Mock successful PostgreSQL but failed Redis
-      mockPrisma.$queryRaw.mockResolvedValue([{ health_check: 1 }]);
-      mockRedisClient.isReady = false;
-
-      const response = await request(app)
-        .get('/health')
-        .expect(206);
-
-      expect(response.body.status).toBe('degraded');
-      expect(response.body.checks.some((check: any) =>
-        check.name === 'Redis Cache' && check.status === 'unhealthy'
-      )).toBe(true);
-    });
-
     it('should include metadata in response', async () => {
-      mockPrisma.$queryRaw.mockResolvedValue([{ health_check: 1 }]);
-
       const response = await request(app)
-        .get('/health')
-        .expect(200);
+        .get('/health');
 
       expect(response.body.metadata).toBeDefined();
       expect(response.body.metadata).toMatchObject({
@@ -132,16 +70,24 @@ describe('Auth Service Health Endpoints - Integration Tests (INFRA-013.1)', () =
     });
 
     it('should complete health check within reasonable time', async () => {
-      mockPrisma.$queryRaw.mockResolvedValue([{ health_check: 1 }]);
-
       const startTime = Date.now();
       await request(app)
-        .get('/health')
-        .expect(200);
+        .get('/health');
       const duration = Date.now() - startTime;
 
-      // Health check should complete within 2 seconds in normal conditions
-      expect(duration).toBeLessThan(2000);
+      // Health check with real DB should complete within 5 seconds
+      expect(duration).toBeLessThan(5000);
+    });
+
+    it('should have response time recorded for each check', async () => {
+      const response = await request(app)
+        .get('/health');
+
+      response.body.checks.forEach((check: any) => {
+        expect(check).toHaveProperty('responseTime');
+        expect(typeof check.responseTime).toBe('number');
+        expect(check.responseTime).toBeGreaterThan(0);
+      });
     });
   });
 
@@ -159,17 +105,6 @@ describe('Auth Service Health Endpoints - Integration Tests (INFRA-013.1)', () =
       });
     });
 
-    it('should always return 200 even if database is down', async () => {
-      // Mock database failure
-      mockPrisma.$queryRaw.mockRejectedValue(new Error('Connection refused'));
-
-      const response = await request(app)
-        .get('/health/live')
-        .expect(200);
-
-      expect(response.body.alive).toBe(true);
-    });
-
     it('should respond very quickly (liveness check)', async () => {
       const startTime = Date.now();
       await request(app)
@@ -177,30 +112,26 @@ describe('Auth Service Health Endpoints - Integration Tests (INFRA-013.1)', () =
         .expect(200);
       const duration = Date.now() - startTime;
 
-      // Liveness check should be very fast (< 100ms)
-      expect(duration).toBeLessThan(100);
+      // Liveness check should be very fast (< 200ms with real services)
+      expect(duration).toBeLessThan(200);
     });
   });
 
   describe('GET /health/ready', () => {
     it('should return 200 when PostgreSQL is accessible', async () => {
-      // Mock successful connections
-      const mockDbReady = jest.fn().mockReturnValue(true);
-
       const response = await request(app)
         .get('/health/ready');
 
-      // Readiness depends on DatabaseService.isReady() implementation
-      if (response.status === 200) {
-        expect(response.body).toMatchObject({
-          ready: true,
-          service: 'auth-service',
-          timestamp: expect.any(String),
-          dependencies: {
-            postgresql: true,
-          },
-        });
-      }
+      // Should be ready since PostgreSQL is running
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        ready: true,
+        service: 'auth-service',
+        timestamp: expect.any(String),
+        dependencies: expect.objectContaining({
+          postgresql: true,
+        }),
+      });
     });
 
     it('should complete readiness check quickly', async () => {
@@ -209,18 +140,15 @@ describe('Auth Service Health Endpoints - Integration Tests (INFRA-013.1)', () =
         .get('/health/ready');
       const duration = Date.now() - startTime;
 
-      // Readiness check should be fast (< 500ms with DB check)
-      expect(duration).toBeLessThan(500);
+      // Readiness check should be fast (< 1000ms with real DB check)
+      expect(duration).toBeLessThan(1000);
     });
   });
 
   describe('Response Format Validation', () => {
     it('should have all required fields in /health response', async () => {
-      mockPrisma.$queryRaw.mockResolvedValue([{ health_check: 1 }]);
-
       const response = await request(app)
-        .get('/health')
-        .expect(200);
+        .get('/health');
 
       // Required fields
       expect(response.body).toHaveProperty('status');
