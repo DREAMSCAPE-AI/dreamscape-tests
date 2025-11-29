@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 /**
  * User Service Health Endpoints Integration Tests - INFRA-013.1
  *
@@ -20,6 +21,7 @@ import healthRoutes from '../../../dreamscape-services/user/src/routes/health';
 
 // Create test app
 const app = express();
+// @ts-expect-error - Express Router is compatible with app.use(), TypeScript types issue
 app.use('/health', healthRoutes);
 
 describe('User Service Health Endpoints - Integration Tests with Real DB (INFRA-013.1)', () => {

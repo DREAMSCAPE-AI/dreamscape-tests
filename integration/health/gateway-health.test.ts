@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 /**
  * Gateway Service Health Endpoints Integration Tests - INFRA-013.1
  *
@@ -19,6 +20,7 @@ import healthRoutes from '../../../dreamscape-frontend/gateway/src/routes/health
 
 // Create test app
 const app = express();
+// @ts-expect-error - Express Router is compatible with app.use(), TypeScript types issue
 app.use('/health', healthRoutes);
 
 describe('Gateway Service Health Endpoints - Integration Tests with Real Services (INFRA-013.1)', () => {
