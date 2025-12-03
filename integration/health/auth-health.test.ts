@@ -15,6 +15,7 @@
 import request from 'supertest';
 import express from 'express';
 import healthRoutes from '../../../dreamscape-services/auth/src/routes/health';
+import redisClient from '../../../dreamscape-services/auth/src/config/redis';
 
 // NO MOCKS - Using real database connections
 // PostgreSQL and Redis are started by jest.setup.realdb.ts
@@ -25,6 +26,23 @@ const app = express();
 app.use('/health', healthRoutes);
 
 describe('Auth Service Health Endpoints - Integration Tests with Real DB (INFRA-013.1)', () => {
+  // Connect to Redis before tests
+  beforeAll(async () => {
+    try {
+      await redisClient.connect();
+    } catch (error) {
+      console.warn('Redis connection failed in test setup:', error);
+    }
+  }, 30000);
+
+  // Disconnect from Redis after tests
+  afterAll(async () => {
+    try {
+      await redisClient.disconnect();
+    } catch (error) {
+      console.warn('Redis disconnection failed in test cleanup:', error);
+    }
+  });
   describe('GET /health', () => {
     it('should return 200 and HEALTHY status with real database connections', async () => {
       const response = await request(app)
