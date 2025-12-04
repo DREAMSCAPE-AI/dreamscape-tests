@@ -68,6 +68,9 @@ module.exports = {
   // Verbose output
   verbose: true,
 
+  // Run tests serially to avoid Docker container conflicts
+  maxWorkers: 1,
+
   // Don't clear mocks for real DB
   clearMocks: false,
   resetMocks: false,
