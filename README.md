@@ -1,233 +1,211 @@
-# Bienvenue dans le Dépôt dreamscape-tests
+# DreamScape Tests
 
-## À propos
+Tests d'intégration pour les services DreamScape avec vraie base de données PostgreSQL + Redis.
 
-Le dépôt `dreamscape-tests` regroupe tous les tests automatisés et les outils de qualité pour le projet DreamScape, notre plateforme innovante de voyage qui combine l'intelligence artificielle contextuelle et la réalité virtuelle pour offrir des expériences de voyage personnalisées.
-
-Ce référentiel est une composante essentielle de notre stratégie de qualité, garantissant que tous les modules et services de DreamScape fonctionnent correctement ensemble, malgré notre architecture en microservices et notre rythme de développement particulier (2 jours par semaine).
-
-## Structure du Dépôt
-
-```
-dreamscape-tests/
-├── integration/              # Tests d'intégration entre les services
-│   ├── api/                  # Tests d'API entre les différents services
-│   ├── e2e/                  # Tests end-to-end des parcours utilisateurs
-│   └── contract/             # Tests de contrats entre les services
-├── performance/              # Tests de performance et de charge
-│   ├── api/                  # Tests de performance des API
-│   ├── frontend/             # Tests de performance de l'interface
-│   └── vr/                   # Tests de performance des expériences VR
-├── security/                 # Tests de sécurité
-│   ├── penetration/          # Tests de pénétration
-│   ├── static-analysis/      # Analyse statique de sécurité
-│   └── compliance/           # Tests de conformité (RGPD, etc.)
-├── accessibility/            # Tests d'accessibilité (WCAG)
-├── mocks/                    # Serveurs et données simulées pour les tests
-│   ├── services/             # Mock des services externes
-│   ├── amadeus/              # Mock d'Amadeus API
-│   └── data/                 # Jeux de données pour les tests
-├── tools/                    # Outils et scripts pour les tests
-│   ├── setup/                # Scripts de configuration d'environnement
-│   ├── reporting/            # Génération de rapports de tests
-│   └── ci/                   # Scripts d'intégration continue
-└── docs/                     # Documentation des tests
-```
-
-## Philosophie de Tests
-
-Notre approche de tests s'articule autour de plusieurs principes clés :
-
-1. **Tests pyramidaux** : Nous suivons une pyramide de tests avec une large base de tests unitaires (dans chaque service), des tests d'intégration pour valider les interactions, et des tests E2E ciblés pour les parcours critiques.
-
-2. **Tests d'intégration renforcés** : En raison de notre architecture microservices, nous mettons un accent particulier sur les tests d'intégration pour garantir que les services communiquent correctement.
-
-3. **Automatisation complète** : Tous les tests sont automatisés et intégrés dans notre pipeline CI/CD pour une exécution régulière.
-
-4. **Développement piloté par les tests (TDD)** : Nous encourageons l'écriture des tests avant le code pour les fonctionnalités critiques.
-
-5. **Tests de non-régression** : Chaque correctif est accompagné d'un test pour éviter la réapparition du problème.
-
-## Installation et Configuration
+## 🚀 Quick Start
 
 ### Prérequis
+- Docker Desktop installé et démarré
+- Node.js 18+
 
-- Node.js (v16+)
-- Docker et Docker Compose
-- Accès au registre privé GitHub Packages de DreamScape
-
-### Installation
+### Lancer les tests
 
 ```bash
-# Cloner le dépôt
-git clone git@github.com:dreamscape/dreamscape-tests.git
-cd dreamscape-tests
-
 # Installer les dépendances
 npm install
 
-# Configurer l'environnement
-npm run setup
+# Lancer tous les tests de health checks
+npm run test:health:realdb
 ```
 
-### Configuration des Variables d'Environnement
+Docker démarrera automatiquement PostgreSQL et Redis avant les tests.
 
-Créez un fichier `.env` à la racine du projet en vous basant sur le modèle `.env.example` :
+## 📋 Commandes Disponibles
 
-```
-# Environnement (dev, staging, prod)
-ENV=dev
-
-# URLs des services (par défaut: services locaux)
-AUTH_SERVICE_URL=http://localhost:3001
-USER_SERVICE_URL=http://localhost:3002
-VOYAGE_SERVICE_URL=http://localhost:3003
-AI_SERVICE_URL=http://localhost:3004
-PANORAMA_SERVICE_URL=http://localhost:3005
-
-# Informations d'authentification pour les tests
-TEST_USER_EMAIL=test@dreamscape.com
-TEST_USER_PASSWORD=*********
-
-# Configuration CI/CD
-CI_TIMEOUT=300000
-```
-
-## Exécution des Tests
-
-### Tests d'Intégration
+### Tests Health Checks (INFRA-013.1)
 
 ```bash
-# Tous les tests d'intégration
-npm run test:integration
+# Tous les tests avec vraie DB (58 tests)
+npm run test:health:realdb
 
-# Tests d'API uniquement
-npm run test:integration:api
+# Tests d'un service spécifique
+npm run test:health:realdb:auth     # Auth service uniquement
+npm run test:health:realdb:user     # User service uniquement
+npm run test:health:realdb:voyage   # Voyage service uniquement
+npm run test:health:realdb:ai       # AI service uniquement
+npm run test:health:realdb:gateway  # Gateway service uniquement
 
-# Tests E2E uniquement
-npm run test:integration:e2e
-
-# Tests de contrats uniquement
-npm run test:integration:contract
+# Mode verbose (pour debug)
+npm run test:health:realdb:verbose
 ```
 
-### Tests de Performance
+### Tests Unitaires (avec mocks)
 
 ```bash
-# Tous les tests de performance
-npm run test:performance
+# Tous les tests unitaires
+npm test
 
-# Tests de performance des API
-npm run test:performance:api
-
-# Tests de performance du frontend
-npm run test:performance:frontend
-
-# Tests de performance VR
-npm run test:performance:vr
+# Tests unitaires d'un service
+npm test -- auth-health.test.ts
 ```
 
-### Tests de Sécurité
+## ✅ Résultats Attendus
+
+```
+Test Suites: 5 passed, 5 total
+Tests:       58 passed, 58 total
+Time:        ~14s
+```
+
+**Par service:**
+- Auth: 11/11 tests ✅
+- User: 18/18 tests ✅
+- Voyage: 10/10 tests ✅
+- AI: 10/10 tests ✅
+- Gateway: 10/10 tests ✅
+
+## 🐳 Docker
+
+Les conteneurs Docker sont gérés automatiquement par les tests.
+
+### Vérifier que Docker tourne
 
 ```bash
-# Tous les tests de sécurité
-npm run test:security
-
-# Tests de pénétration
-npm run test:security:penetration
-
-# Analyse statique de sécurité
-npm run test:security:static
+docker ps
 ```
 
-### Tests d'Accessibilité
+Vous devriez voir:
+- `dreamscape-postgres` (Running)
+- `dreamscape-redis` (Running)
+
+### Arrêter les conteneurs (après les tests)
 
 ```bash
-npm run test:accessibility
+cd ../dreamscape-infra/docker
+docker-compose -f docker-compose.bigpods.dev.yml down
 ```
 
-## Environnements de Test
+## 🔧 Troubleshooting
 
-Nous avons plusieurs environnements disponibles pour les tests :
+### "Docker not running"
+```bash
+# Démarrer Docker Desktop
+# Windows: Ouvrir Docker Desktop
+# Mac: Ouvrir Docker.app
+# Linux: sudo systemctl start docker
+```
 
-1. **Local** : Utilise les services installés localement ou des mocks
-2. **Dev** : Connecté aux services de l'environnement de développement
-3. **Staging** : Environnement de préproduction pour les tests finaux
-4. **Production** : Tests de smoke uniquement sur l'environnement de production
+### "Port 5432 already in use"
+```bash
+# Un PostgreSQL local tourne, l'arrêter temporairement
+# Windows: services.msc → Arrêter PostgreSQL
+# Mac/Linux: brew services stop postgresql
+```
 
-Pour spécifier l'environnement :
+### "Redis connection failed"
+```bash
+# Vérifier que Redis tourne
+docker ps | grep redis
+
+# Redémarrer Redis si nécessaire
+cd ../dreamscape-infra/docker
+docker-compose -f docker-compose.bigpods.dev.yml restart redis
+```
+
+### Tests qui échouent
 
 ```bash
-# Exécuter sur l'environnement de développement
-ENV=dev npm run test:integration
+# Mode verbose pour voir les détails
+npm run test:health:realdb:verbose
 
-# Exécuter sur l'environnement de staging
-ENV=staging npm run test:integration
+# Nettoyer et recommencer
+docker-compose -f ../dreamscape-infra/docker/docker-compose.bigpods.dev.yml down
+npm run test:health:realdb
 ```
 
-## Mocks et Données de Test
+## 📁 Structure
 
-Pour faciliter les tests locaux, nous fournissons des mocks pour tous les services :
+```
+dreamscape-tests/
+├── integration/
+│   └── health/              # Tests d'intégration health checks
+│       ├── auth-health.test.ts
+│       ├── user-health.test.ts
+│       ├── voyage-health.test.ts
+│       ├── ai-health.test.ts
+│       └── gateway-health.test.ts
+├── jest.config.realdb.js    # Config Jest pour vraie DB
+├── jest.setup.realdb.ts     # Setup Docker automatique
+└── package.json
+```
 
+## 📚 Documentation Complète
+
+- **[REALDB_MIGRATION_SUMMARY.md](./REALDB_MIGRATION_SUMMARY.md)** - Résumé de la migration vers vraie DB
+- **[REALDB_TESTS.md](./REALDB_TESTS.md)** - Guide détaillé des tests avec vraie DB
+- **[HEALTH_CHECK_TEST_REPORT.md](./HEALTH_CHECK_TEST_REPORT.md)** - Rapport des tests health checks
+
+## 🎯 Endpoints Testés
+
+Chaque service teste 3 endpoints:
+
+### `/health` - Health Check Complet
+- Status: 200 (healthy), 206 (degraded), 503 (unhealthy)
+- Vérifie: PostgreSQL, Redis, services downstream
+- Inclut: metadata, response time, uptime
+
+### `/health/live` - Liveness Probe
+- Status: 200 (alive)
+- Vérifie: Le service répond
+- Utilisé par: Kubernetes liveness probe
+
+### `/health/ready` - Readiness Probe
+- Status: 200 (ready), 503 (not ready)
+- Vérifie: Dépendances critiques (DB)
+- Utilisé par: Kubernetes readiness probe
+
+## 👥 Pour l'Équipe
+
+### Avant de commit
 ```bash
-# Démarrer tous les services mockés
-npm run start:mocks
+# Vérifier que tous les tests passent
+npm run test:health:realdb
 
-# Démarrer uniquement le mock d'Amadeus
-npm run start:mocks:amadeus
+# Attendu: 58/58 tests passed ✅
 ```
 
-## Intégration Continue
+### Ajouter de nouveaux tests
 
-Ce dépôt est intégré à notre pipeline CI/CD pour exécuter automatiquement les tests :
+1. Créer le fichier dans `integration/health/`
+2. Importer les routes du service
+3. Utiliser `jest.setup.realdb.ts` (Docker auto-start)
+4. Tester avec vraie DB (pas de mocks!)
 
-- Les tests d'intégration sont exécutés à chaque Pull Request
-- Les tests de performance sont exécutés quotidiennement
-- Les tests de sécurité sont exécutés hebdomadairement
-- Les tests d'accessibilité sont exécutés à chaque modification de l'interface utilisateur
+Exemple:
+```typescript
+import request from 'supertest';
+import express from 'express';
+import healthRoutes from '../../../dreamscape-services/mon-service/src/routes/health';
 
-## Rapports et Monitoring
+const app = express();
+app.use('/health', healthRoutes);
 
-Les rapports de tests sont générés automatiquement et disponibles :
+describe('Mon Service Health', () => {
+  it('should return 200', async () => {
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(200);
+  });
+});
+```
 
-- Dans la section Actions de GitHub
-- Sur notre tableau de bord Grafana (pour les tendances de performance)
-- Dans SonarQube pour la qualité et la couverture de code
+## 🚦 CI/CD
 
-## Contribution
+Ces tests tournent automatiquement sur:
+- Pull Requests vers `main`
+- Commits sur branches de feature
+- Pipeline de déploiement
 
-### Ajouter un Nouveau Test
+Status: ✅ **58/58 tests passing (100%)**
 
-1. Identifiez la catégorie appropriée pour votre test
-2. Créez un nouveau fichier de test en suivant les conventions de nommage
-3. Assurez-vous que votre test est indépendant et peut être exécuté seul
-4. Mettez à jour la documentation si nécessaire
-
-### Bonnes Pratiques
-
-- Chaque test doit avoir un objectif clair et documenté
-- Évitez les dépendances entre les tests
-- Assurez-vous que les tests sont déterministes (pas de résultats aléatoires)
-- Nettoyez toujours les données créées par vos tests
-- Utilisez des tags pour catégoriser les tests (`@smoke`, `@critical`, etc.)
-
-## Spécificités pour notre Rythme de Développement
-
-Comme notre équipe travaille 2 jours par semaine sur le projet, nous avons mis en place des stratégies spécifiques :
-
-- **Tests automatisés complets** pour détecter rapidement les problèmes
-- **Documentation détaillée** pour faciliter la reprise du travail
-- **Environnements éphémères** pour chaque branche de fonctionnalité
-- **Notification d'échecs de tests** par email et Slack pour réagir rapidement
-
-## Contact
-
-Pour toute question concernant les tests ou ce dépôt, contactez :
-
-- **QA Lead**: [Nom du QA Lead]
-- **Tech Lead**: [Nom du Tech Lead]
-- **Slack**: #dreamscape-tests
-
----
-
-Dernière mise à jour : 20 mai 2025
+**Dernière mise à jour:** 2025-12-03
+**Status:** ✅ Production Ready - 100% tests passing
