@@ -76,6 +76,12 @@ describe('CacheService - DR-65US-VOYAGE-004', () => {
   });
 
   describe('Cache Wrapper', () => {
+    beforeEach(async () => {
+      // Clear cache before each test in this suite
+      await cacheService.clearPattern('amadeus:flights:*');
+      cacheService.resetStats();
+    });
+
     it('should cache API call results', async () => {
       let apiCallCount = 0;
 
@@ -84,10 +90,13 @@ describe('CacheService - DR-65US-VOYAGE-004', () => {
         return { result: 'api data', count: apiCallCount };
       };
 
+      // Use unique parameters to avoid collision with other tests
+      const uniqueParams = { origin: 'PAR', destination: 'LON', testId: 'cache-test-1' };
+
       // First call - should hit API
       const result1 = await cacheService.cacheWrapper(
         'flights',
-        { origin: 'PAR', destination: 'LON' },
+        uniqueParams,
         mockApiCall
       );
 
@@ -97,7 +106,7 @@ describe('CacheService - DR-65US-VOYAGE-004', () => {
       // Second call - should use cache
       const result2 = await cacheService.cacheWrapper(
         'flights',
-        { origin: 'PAR', destination: 'LON' },
+        uniqueParams,
         mockApiCall
       );
 
@@ -113,17 +122,18 @@ describe('CacheService - DR-65US-VOYAGE-004', () => {
         return { result: 'api data', count: apiCallCount };
       };
 
+      // Use unique parameters to avoid collision with other tests
       // First call
       await cacheService.cacheWrapper(
         'flights',
-        { origin: 'PAR', destination: 'LON' },
+        { origin: 'PAR', destination: 'LON', testId: 'diff-params-1' },
         mockApiCall
       );
 
       // Second call with different params
       await cacheService.cacheWrapper(
         'flights',
-        { origin: 'NYC', destination: 'LAX' },
+        { origin: 'NYC', destination: 'LAX', testId: 'diff-params-2' },
         mockApiCall
       );
 
@@ -189,10 +199,13 @@ describe('CacheService - DR-65US-VOYAGE-004', () => {
       expect(stats.hitRate).toBe('75.00%');
     });
 
-    it('should reset statistics', () => {
+    it('should reset statistics', async () => {
+      // Reset first to ensure clean state
+      cacheService.resetStats();
+
       // Generate some stats
-      cacheService.get('test-key-1');
-      cacheService.get('test-key-2');
+      await cacheService.get('test-key-reset-1');
+      await cacheService.get('test-key-reset-2');
 
       let stats = cacheService.getStats();
       expect(stats.total).toBeGreaterThan(0);

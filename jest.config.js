@@ -38,7 +38,8 @@ module.exports = {
   
   // Module path mapping
   moduleNameMapper: {
-    '^@dreamscape/db$': '<rootDir>/../dreamscape-services/db/src/index.ts'
+    '^@dreamscape/db$': '<rootDir>/../dreamscape-services/db/src/index.ts',
+    '^@/(.*)$': '<rootDir>/../dreamscape-services/voyage/src/$1'
   },
   
   // Timeout for tests
@@ -53,7 +54,11 @@ module.exports = {
       useESM: false,
       tsconfig: {
         module: 'commonjs',
-        allowJs: true
+        allowJs: true,
+        baseUrl: '.',
+        paths: {
+          '@/*': ['../dreamscape-services/voyage/src/*']
+        }
       }
     }],
     '^.+\\.js$': 'babel-jest'
