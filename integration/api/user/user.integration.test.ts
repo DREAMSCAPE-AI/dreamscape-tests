@@ -2,13 +2,15 @@ import request from 'supertest';
 
 const USER_SERVICE_URL: string = process.env.USER_SERVICE_URL!;
 const AUTH_SERVICE_URL: string = process.env.AUTH_SERVICE_URL!;
+const USER_API_PREFIX = '/api/v1/users';
+const AUTH_API_PREFIX = '/api/v1/auth';
 
-const makeRequest = (app: any) => {
+const makeRequest = (app: any, prefix: string = USER_API_PREFIX) => {
   return {
-    post: (path: string) => request(app).post(path).set('x-test-rate-limit', 'true'),
-    get: (path: string) => request(app).get(path).set('x-test-rate-limit', 'true'),
-    put: (path: string) => request(app).put(path).set('x-test-rate-limit', 'true'),
-    delete: (path: string) => request(app).delete(path).set('x-test-rate-limit', 'true')
+    post: (path: string) => request(app).post(`${prefix}${path}`).set('x-test-rate-limit', 'true'),
+    get: (path: string) => request(app).get(`${prefix}${path}`).set('x-test-rate-limit', 'true'),
+    put: (path: string) => request(app).put(`${prefix}${path}`).set('x-test-rate-limit', 'true'),
+    delete: (path: string) => request(app).delete(`${prefix}${path}`).set('x-test-rate-limit', 'true')
   };
 };
 
@@ -43,8 +45,8 @@ describe('User Service Integration Tests', () => {
 
   beforeAll(async () => {
     try {
-      await makeRequest(userURL).post('/test/reset').expect(200);
-      await makeRequest(authURL).post('/test/reset').expect(200);
+      await makeRequest(userURL, USER_API_PREFIX).post('/test/reset').expect(200);
+      await makeRequest(authURL, AUTH_API_PREFIX).post('/test/reset').expect(200);
     } catch (error) {
       console.warn('Test reset endpoints not available, continuing...');
     }
@@ -60,7 +62,7 @@ describe('User Service Integration Tests', () => {
       username: `testuser${Date.now()}`
     };
 
-    const registerResponse = await request(authURL)
+    const registerResponse = await makeRequest(authURL, AUTH_API_PREFIX)
       .post('/register')
       .send(registrationData)
       .expect(201);
@@ -72,8 +74,8 @@ describe('User Service Integration Tests', () => {
   afterEach(async () => {
     try {
       if (testUser?.email) {
-        await makeRequest(userURL).post('/test/cleanup').send();
-        await makeRequest(authURL).post('/test/cleanup').send();
+        await makeRequest(userURL, USER_API_PREFIX).post('/test/cleanup').send();
+        await makeRequest(authURL, AUTH_API_PREFIX).post('/test/cleanup').send();
       }
     } catch (error) {
       // Cleanup errors are not critical for tests
@@ -89,7 +91,7 @@ describe('User Service Integration Tests', () => {
         website: 'https://testwebsite.com'
       };
 
-      const createResponse = await request(userURL)
+      const createResponse = await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(profileData)
@@ -112,14 +114,14 @@ describe('User Service Integration Tests', () => {
         location: 'Get City, GC'
       };
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(profileData)
         .expect(201);
 
       // Then get the profile
-      const getResponse = await request(userURL)
+      const getResponse = await makeRequest(userURL, USER_API_PREFIX)
         .get(`/profile/${testUser!.id}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -138,7 +140,7 @@ describe('User Service Integration Tests', () => {
         location: 'Initial City'
       };
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(initialData)
@@ -151,7 +153,7 @@ describe('User Service Integration Tests', () => {
         website: 'https://updated-website.com'
       };
 
-      const updateResponse = await request(userURL)
+      const updateResponse = await makeRequest(userURL, USER_API_PREFIX)
         .put(`/profile/${testUser!.id}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .send(updateData)
@@ -166,7 +168,7 @@ describe('User Service Integration Tests', () => {
     it('should return 404 for non-existent profile', async () => {
       const nonExistentUserId = 'non-existent-user-id';
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .get(`/profile/${nonExistentUserId}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(404);
@@ -177,7 +179,7 @@ describe('User Service Integration Tests', () => {
         userId: testUser!.id
       };
 
-      const createResponse = await request(userURL)
+      const createResponse = await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(minimalData)
@@ -199,7 +201,7 @@ describe('User Service Integration Tests', () => {
         bio: 'Avatar test user'
       };
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(profileData);
@@ -216,7 +218,7 @@ describe('User Service Integration Tests', () => {
         0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
       ]);
 
-      const uploadResponse = await request(userURL)
+      const uploadResponse = await makeRequest(userURL, USER_API_PREFIX)
         .post(`/avatar/${testUser!.id}/avatar`)
         .set('Authorization', `Bearer ${accessToken}`)
         .attach('avatar', testImageBuffer, 'test-avatar.png')
@@ -231,7 +233,7 @@ describe('User Service Integration Tests', () => {
     it('should reject non-image files', async () => {
       const textBuffer = Buffer.from('This is not an image', 'utf8');
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post(`/avatar/${testUser!.id}/avatar`)
         .set('Authorization', `Bearer ${accessToken}`)
         .attach('avatar', textBuffer, 'not-an-image.txt')
@@ -242,7 +244,7 @@ describe('User Service Integration Tests', () => {
       // Create a buffer larger than 5MB
       const largeBuffer = Buffer.alloc(6 * 1024 * 1024, 0);
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post(`/avatar/${testUser!.id}/avatar`)
         .set('Authorization', `Bearer ${accessToken}`)
         .attach('avatar', largeBuffer, 'large-image.png')
@@ -258,7 +260,7 @@ describe('User Service Integration Tests', () => {
         lastName: 'User'
       };
 
-      const otherUserResponse = await request(authURL)
+      const otherUserResponse = await makeRequest(authURL, AUTH_API_PREFIX)
         .post('/register')
         .send(otherUserData)
         .expect(201);
@@ -266,7 +268,7 @@ describe('User Service Integration Tests', () => {
       const otherUserId = otherUserResponse.body.data.user.id;
       const testImageBuffer = Buffer.from([0x89, 0x50, 0x4E, 0x47]); // Minimal PNG header
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post(`/avatar/${otherUserId}/avatar`)
         .set('Authorization', `Bearer ${accessToken}`) // Using testUser's token
         .attach('avatar', testImageBuffer, 'test-avatar.png')
@@ -274,7 +276,7 @@ describe('User Service Integration Tests', () => {
     }, 15000);
 
     it('should handle missing file in avatar upload', async () => {
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post(`/avatar/${testUser!.id}/avatar`)
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(400);
@@ -283,16 +285,16 @@ describe('User Service Integration Tests', () => {
 
   describe('Authentication & Authorization', () => {
     it('should reject requests without authentication token', async () => {
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .get(`/profile/${testUser!.id}`)
         .expect(401);
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .send({ userId: testUser!.id })
         .expect(401);
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .put(`/profile/${testUser!.id}`)
         .send({ bio: 'Updated bio' })
         .expect(401);
@@ -308,7 +310,7 @@ describe('User Service Integration Tests', () => {
       ];
 
       for (const token of invalidTokens) {
-        await request(userURL)
+        await makeRequest(userURL, USER_API_PREFIX)
           .get(`/profile/${testUser!.id}`)
           .set('Authorization', token)
           .expect(401);
@@ -320,7 +322,7 @@ describe('User Service Integration Tests', () => {
       // For now, we'll use an obviously invalid token
       const expiredToken = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .get(`/profile/${testUser!.id}`)
         .set('Authorization', expiredToken)
         .expect(401);
@@ -337,7 +339,7 @@ describe('User Service Integration Tests', () => {
 
       // This test depends on your validation rules
       // Adjust expectations based on your ProfileService validation
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(invalidProfileData)
@@ -352,7 +354,7 @@ describe('User Service Integration Tests', () => {
         website: 'javascript:alert("xss")'
       };
 
-      const createResponse = await request(userURL)
+      const createResponse = await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(maliciousData);
@@ -377,7 +379,7 @@ describe('User Service Integration Tests', () => {
       };
 
       // Should not cause server errors
-      const response = await request(userURL)
+      const response = await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(sqlInjectionAttempts);
@@ -397,7 +399,7 @@ describe('User Service Integration Tests', () => {
         location: undefined
       };
 
-      const response = await request(userURL)
+      const response = await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(edgeCaseData);
@@ -407,7 +409,7 @@ describe('User Service Integration Tests', () => {
     }, 10000);
 
     it('should handle missing userId in profile operations', async () => {
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -417,7 +419,7 @@ describe('User Service Integration Tests', () => {
     }, 10000);
 
     it('should handle malformed request bodies', async () => {
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .set('Content-Type', 'application/json')
@@ -434,14 +436,14 @@ describe('User Service Integration Tests', () => {
         bio: 'Integration test profile'
       };
 
-      await request(userURL)
+      await makeRequest(userURL, USER_API_PREFIX)
         .post('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(profileData)
         .expect(201);
 
       // Verify user still exists in auth service
-      const profileResponse = await request(authURL)
+      const profileResponse = await makeRequest(authURL, AUTH_API_PREFIX)
         .get('/profile')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -449,7 +451,7 @@ describe('User Service Integration Tests', () => {
       expect(profileResponse.body.data.user.id).toBe(testUser!.id);
 
       // Get user profile from user service
-      const userProfileResponse = await request(userURL)
+      const userProfileResponse = await makeRequest(userURL, USER_API_PREFIX)
         .get(`/profile/${testUser!.id}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -461,7 +463,7 @@ describe('User Service Integration Tests', () => {
       // Use an invalid token that would require auth service validation
       const invalidToken = 'Bearer invalid-token-that-requires-validation';
 
-      const response = await request(userURL)
+      const response = await makeRequest(userURL, USER_API_PREFIX)
         .get(`/profile/${testUser!.id}`)
         .set('Authorization', invalidToken);
 
