@@ -39,6 +39,22 @@ npm run test:health:realdb:gateway  # Gateway service uniquement
 npm run test:health:realdb:verbose
 ```
 
+### Tests E2E - Cart & Booking Flow (DR-505)
+
+```bash
+# Run all cart and booking E2E tests
+npm run test:e2e:cart
+
+# Run with interactive UI
+npm run test:e2e:cart:open
+
+# Run all E2E tests (voyage + web + cart)
+npm run test:e2e
+```
+
+**Quick Start:** See [CART_TESTS_QUICKSTART.md](./CART_TESTS_QUICKSTART.md)
+**Full Documentation:** See [CART_BOOKING_TESTS.md](./CART_BOOKING_TESTS.md)
+
 ### Tests Unitaires (avec mocks)
 
 ```bash
@@ -141,9 +157,18 @@ dreamscape-tests/
 
 ## 📚 Documentation Complète
 
+### Database & Health Tests
 - **[REALDB_MIGRATION_SUMMARY.md](./REALDB_MIGRATION_SUMMARY.md)** - Résumé de la migration vers vraie DB
 - **[REALDB_TESTS.md](./REALDB_TESTS.md)** - Guide détaillé des tests avec vraie DB
 - **[HEALTH_CHECK_TEST_REPORT.md](./HEALTH_CHECK_TEST_REPORT.md)** - Rapport des tests health checks
+
+### E2E Tests
+- **[CART_BOOKING_TESTS.md](./CART_BOOKING_TESTS.md)** - Complete cart and booking flow E2E tests (DR-505)
+- **[CART_TESTS_QUICKSTART.md](./CART_TESTS_QUICKSTART.md)** - Quick start guide for cart tests
+
+### Other Tests
+- **[PROFILE_TESTS_README.md](./PROFILE_TESTS_README.md)** - Profile user tests (DR-59)
+- **[KAFKA-TESTING-GUIDE.md](./KAFKA-TESTING-GUIDE.md)** - Kafka testing guide
 
 ## 🎯 Endpoints Testés
 
