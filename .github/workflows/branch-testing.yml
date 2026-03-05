@@ -2,9 +2,9 @@ name: Branch Testing & Coverage
 
 on:
   push:
-    branches: ["**"]
+    branches: [main, develop]
   pull_request:
-    branches: ["**"]
+    branches: [main, develop]
   repository_dispatch:
     types: [test-request]
   workflow_dispatch:
