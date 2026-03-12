@@ -165,7 +165,13 @@ jobs:
         run: |
           if [ -d "../dreamscape-services/${{ matrix.component }}" ] && [ -f "../dreamscape-services/${{ matrix.component }}/package.json" ]; then
             cd ../dreamscape-services/${{ matrix.component }}
-            npm ci
+            if [ -f "package-lock.json" ]; then
+              npm ci
+            elif [ -f "yarn.lock" ]; then
+              yarn install --frozen-lockfile
+            else
+              npm install
+            fi
             npm run build --if-present
           else
             echo "Service ${{ matrix.component }} not found or no package.json"
