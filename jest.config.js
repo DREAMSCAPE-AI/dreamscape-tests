@@ -38,8 +38,9 @@ module.exports = {
   
   // Module path mapping
   moduleNameMapper: {
-    '^@dreamscape/db$': '<rootDir>/../dreamscape-services/db/src/index.ts',
-    '^@/(.*)$': '<rootDir>/../dreamscape-services/voyage/src/$1'
+    '^@dreamscape/db$': '<rootDir>/../dreamscape-services/db/index.ts',
+    '^@/(.*)$': '<rootDir>/../dreamscape-services/voyage/src/$1',
+    '^@ai/(.*)$': '<rootDir>/../dreamscape-services/ai/src/$1'
   },
   
   // Timeout for tests
@@ -57,7 +58,9 @@ module.exports = {
         allowJs: true,
         baseUrl: '.',
         paths: {
-          '@/*': ['../dreamscape-services/voyage/src/*']
+          '@/*': ['../dreamscape-services/voyage/src/*'],
+          '@ai/*': ['../dreamscape-services/ai/src/*'],
+          '@dreamscape/db': ['../dreamscape-services/db/index.ts']
         }
       }
     }],

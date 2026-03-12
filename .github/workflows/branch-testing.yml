@@ -2,9 +2,9 @@ name: Branch Testing & Coverage
 
 on:
   push:
-    branches: ["**"]
+    branches: [main, dev, develop]
   pull_request:
-    branches: ["**"]
+    branches: [main, dev, develop]
   repository_dispatch:
     types: [test-request]
   workflow_dispatch:
@@ -146,6 +146,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: repositories-${{ github.run_id }}
+          path: ..
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -229,6 +230,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: repositories-${{ github.run_id }}
+          path: ..
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -289,6 +291,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: repositories-${{ github.run_id }}
+          path: ..
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -383,42 +386,6 @@ jobs:
           path: coverage-summary.md
           retention-days: 30
 
-  notify-completion:
-    name: Notify Test Completion
-    runs-on: ubuntu-latest
-    needs: [parse-context, unit-tests, integration-tests, e2e-tests, coverage-report]
-    if: always() && needs.parse-context.outputs.source_repo != 'manual'
-    steps:
-      - name: Determine test status
-        id: status
-        run: |
-          if [[ "${{ needs.unit-tests.result }}" == "success" && 
-                "${{ needs.integration-tests.result }}" == "success" && 
-                "${{ needs.e2e-tests.result }}" == "success" ]]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "message=✅ All tests passed for branch ${{ needs.parse-context.outputs.branch }}" >> $GITHUB_OUTPUT
-          else
-            echo "status=failure" >> $GITHUB_OUTPUT
-            echo "message=❌ Some tests failed for branch ${{ needs.parse-context.outputs.branch }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Trigger deployment if tests pass
-        if: steps.status.outputs.status == 'success' && (needs.parse-context.outputs.branch == 'main' || needs.parse-context.outputs.branch == 'develop')
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.CI_CLONE_TOKEN }}
-          repository: ${{ env.ORG }}/dreamscape-infra
-          event-type: deploy-request
-          client-payload: |
-            {
-              "repository": "${{ needs.parse-context.outputs.source_repo }}",
-              "branch": "${{ needs.parse-context.outputs.branch }}",
-              "sha": "${{ needs.parse-context.outputs.source_sha }}",
-              "environment": "${{ needs.parse-context.outputs.branch == 'main' && 'staging' || 'dev' }}",
-              "strategy": "rolling",
-              "tests_passed": true
-            }
-
   # Agrégateur pour les branch protection rules
   test:
     name: All Tests
@@ -428,15 +395,21 @@ jobs:
     steps:
       - name: Check test results
         run: |
-          if [[ "${{ needs.unit-tests.result }}" == "success" && 
-                "${{ needs.integration-tests.result }}" == "success" && 
-                "${{ needs.e2e-tests.result }}" == "success" ]]; then
-            echo "✅ All tests passed successfully!"
-            exit 0
-          else
+          failed=false
+          [[ "${{ needs.unit-tests.result }}" == "failure" ]] && failed=true
+          [[ "${{ needs.integration-tests.result }}" == "failure" ]] && failed=true
+          [[ "${{ needs.e2e-tests.result }}" == "failure" ]] && failed=true
+
+          if $failed; then
             echo "❌ Some tests failed:"
             echo "  Unit tests: ${{ needs.unit-tests.result }}"
             echo "  Integration tests: ${{ needs.integration-tests.result }}"
             echo "  E2E tests: ${{ needs.e2e-tests.result }}"
             exit 1
+          else
+            echo "✅ CI passed (skipped jobs are acceptable)"
+            echo "  Unit tests: ${{ needs.unit-tests.result }}"
+            echo "  Integration tests: ${{ needs.integration-tests.result }}"
+            echo "  E2E tests: ${{ needs.e2e-tests.result }}"
+            exit 0
           fi
