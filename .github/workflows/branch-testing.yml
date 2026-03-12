@@ -137,7 +137,7 @@ jobs:
     if: ${{ needs.parse-context.outputs.test_scope == 'full' || needs.parse-context.outputs.test_scope == 'backend' }}
     strategy:
       matrix:
-        component: [auth-service, user-service, ai-service, payment-service, voyage-service]
+        component: [auth, user, ai, payment, voyage]
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
@@ -177,7 +177,7 @@ jobs:
         run: |
           if [ -d "dreamscape-services/${COMPONENT}" ]; then
             echo "🧪 Running unit tests for ${COMPONENT}"
-            npm run test:coverage:$(echo ${COMPONENT} | sed 's/-service//') || echo "No coverage script for ${COMPONENT}"
+            npm run test:coverage:${COMPONENT} || echo "No coverage script for ${COMPONENT}"
           else
             echo "❌ Component ${COMPONENT} not available"
           fi
