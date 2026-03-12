@@ -180,6 +180,14 @@ jobs:
             cd -
           fi
 
+          # Build @dreamscape/health (shared/health)
+          if [ -d "../dreamscape-services/shared/health" ]; then
+            cd ../dreamscape-services/shared/health
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npm run build --if-present
+            cd -
+          fi
+
       - name: Install service dependencies
         run: |
           if [ -d "../dreamscape-services/${{ matrix.component }}" ] && [ -f "../dreamscape-services/${{ matrix.component }}/package.json" ]; then
