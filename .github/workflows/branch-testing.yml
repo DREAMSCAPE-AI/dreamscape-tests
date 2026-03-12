@@ -151,7 +151,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install test dependencies
         run: |
@@ -159,6 +159,25 @@ jobs:
             npm ci
           else
             echo "No package-lock.json found, skipping test dependencies"
+          fi
+
+      - name: Build shared packages
+        run: |
+          # Build @dreamscape/db (prisma generate + tsc)
+          if [ -d "../dreamscape-services/db" ]; then
+            cd ../dreamscape-services/db
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npx prisma generate
+            npm run build --if-present
+            cd -
+          fi
+
+          # Build @dreamscape/kafka
+          if [ -d "../dreamscape-services/shared/kafka" ]; then
+            cd ../dreamscape-services/shared/kafka
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npm run build --if-present
+            cd -
           fi
 
       - name: Install service dependencies
