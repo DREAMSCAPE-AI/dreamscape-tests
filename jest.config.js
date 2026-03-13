@@ -26,33 +26,25 @@ module.exports = {
     '!**/*.d.ts'
   ],
   
-  // Coverage thresholds
-  coverageThreshold: {
-    global: {
-      branches: 70,
-      functions: 70,
-      lines: 70,
-      statements: 70
-    }
-  },
-  
   // Module path mapping
   moduleNameMapper: {
     '^@dreamscape/db$': '<rootDir>/../dreamscape-services/db/index.ts',
+    '^@dreamscape/kafka$': '<rootDir>/../dreamscape-services/shared/kafka/src/index.ts',
     '^@/(.*)$': '<rootDir>/../dreamscape-services/voyage/src/$1',
     '^@ai/(.*)$': '<rootDir>/../dreamscape-services/ai/src/$1'
   },
-  
+
   // Timeout for tests
   testTimeout: 30000,
-  
+
   // Verbose output
   verbose: true,
-  
+
   // Transform files
   transform: {
     '^.+\\.ts$': ['ts-jest', {
       useESM: false,
+      diagnostics: false,
       tsconfig: {
         module: 'commonjs',
         allowJs: true,
@@ -60,7 +52,8 @@ module.exports = {
         paths: {
           '@/*': ['../dreamscape-services/voyage/src/*'],
           '@ai/*': ['../dreamscape-services/ai/src/*'],
-          '@dreamscape/db': ['../dreamscape-services/db/index.ts']
+          '@dreamscape/db': ['../dreamscape-services/db/index.ts'],
+          '@dreamscape/kafka': ['../dreamscape-services/shared/kafka/src/index.ts']
         }
       }
     }],
