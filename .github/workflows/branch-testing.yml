@@ -136,6 +136,7 @@ jobs:
     needs: [parse-context, setup-environment]
     if: ${{ needs.parse-context.outputs.test_scope == 'full' || needs.parse-context.outputs.test_scope == 'backend' }}
     strategy:
+      fail-fast: false
       matrix:
         component: [auth, user, ai, payment, voyage]
     steps:
@@ -201,7 +202,7 @@ jobs:
         run: |
           if [ -d "../dreamscape-services/${COMPONENT}" ]; then
             echo "🧪 Running unit tests for ${COMPONENT}"
-            npm run test:coverage:${COMPONENT} || echo "No coverage script for ${COMPONENT}"
+            npm run test:coverage:${COMPONENT}
           else
             echo "❌ Component ${COMPONENT} not available"
           fi
