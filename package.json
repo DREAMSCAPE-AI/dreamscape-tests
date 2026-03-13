@@ -59,6 +59,8 @@
     "test:integration:kafka:gdpr": "jest --config=./integration/kafka/jest.config.kafka.js --testPathPattern=\"gdpr-events\"",
     "test:e2e:gdpr": "cypress run --spec tests/e2e/web-client/gdpr-compliance.cy.js",
     "test:e2e:gdpr:open": "cypress open --spec tests/e2e/web-client/gdpr-compliance.cy.js",
+    "test:dr575": "jest --config=tests/DR-575-vr-fallback/jest.config.js --verbose",
+    "test:dr575:unit": "jest --config=tests/DR-575-vr-fallback/jest.config.js --testPathPattern=unit --verbose",
     "test:all": "npm run test && npm run test:performance && npm run test:security && npm run test:accessibility",
     "setup": "node tools/setup/environment.js",
     "mock:start": "node mocks/services/mock-server.js",
@@ -80,6 +82,7 @@
   "devDependencies": {
     "@babel/core": "^7.28.4",
     "@babel/preset-env": "^7.28.3",
+    "@babel/preset-react": "^7.28.5",
     "@dreamscape/db": "file:../dreamscape-services/db",
     "@faker-js/faker": "^10.0.0",
     "@playwright/test": "^1.55.0",
@@ -96,6 +99,7 @@
     "babel-jest": "^30.1.2",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "jest-environment-jsdom": "^30.2.0",
     "jsonwebtoken": "^9.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
