@@ -2,18 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
-// Mock Redis client
-const mockRedis = {
-  get: jest.fn(),
-  set: jest.fn(),
-  del: jest.fn(),
-  exists: jest.fn(),
-};
-
-jest.mock('redis', () => ({
-  createClient: jest.fn(() => mockRedis),
-}));
-
 // Mock Prisma client
 const mockPrisma = {
   user: {
@@ -30,7 +18,7 @@ jest.mock('@dreamscape/db', () => ({
 }));
 
 // Import after mocking
-import { authenticateToken, blacklistToken } from '../../../../dreamscape-services/user/src/middleware/auth';
+import { authenticateToken } from '../../../../dreamscape-services/user/src/middleware/auth';
 
 // Extend Request type for testing
 interface AuthRequest extends Request {
@@ -62,11 +50,12 @@ describe('Enhanced Auth Middleware', () => {
 
     mockNext = jest.fn();
 
-    // Reset all mocks
     jest.clearAllMocks();
 
-    // Set default environment
     process.env.JWT_SECRET = 'test-secret-key';
+
+    // Default: token not blacklisted
+    mockPrisma.tokenBlacklist.findUnique.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -78,31 +67,23 @@ describe('Enhanced Auth Middleware', () => {
       const mockUser = {
         id: 'test-user-id',
         email: 'test@example.com',
-        username: 'testuser',
       };
 
-      const token = jwt.sign({ userId: mockUser.id, email: mockUser.email }, process.env.JWT_SECRET!);
-      mockRequest.headers = {
-        authorization: `Bearer ${token}`,
-      };
+      const token = jwt.sign(
+        { userId: mockUser.id, email: mockUser.email, type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
 
-      mockRedis.get.mockResolvedValue(null); // Token not blacklisted
       mockPrisma.user.findUnique.mockResolvedValue(mockUser);
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: mockUser.id },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-        },
+        select: { id: true, email: true },
       });
-      expect(mockRequest.user).toEqual({
-        id: mockUser.id,
-        email: mockUser.email,
-      });
+      expect(mockRequest.user).toEqual({ id: mockUser.id, email: mockUser.email });
       expect(mockNext).toHaveBeenCalled();
     });
 
@@ -113,333 +94,319 @@ describe('Enhanced Auth Middleware', () => {
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Access token required',
+        success: false,
+        message: 'Access token required',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject request with invalid authorization format', async () => {
-      mockRequest.headers = {
-        authorization: 'InvalidFormat token',
-      };
+      mockRequest.headers = { authorization: 'InvalidFormat token' };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Invalid token format',
+        success: false,
+        message: 'Invalid token',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject blacklisted token', async () => {
-      const token = jwt.sign({ userId: 'test-user-id', email: 'test@example.com' }, process.env.JWT_SECRET!);
-      mockRequest.headers = {
-        authorization: `Bearer ${token}`,
-      };
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
 
-      mockRedis.get.mockResolvedValue('blacklisted'); // Token is blacklisted
+      mockPrisma.tokenBlacklist.findUnique.mockResolvedValue({ token });
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Token has been revoked',
+        success: false,
+        message: 'Token has been revoked',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject invalid JWT token', async () => {
-      mockRequest.headers = {
-        authorization: 'Bearer invalid-jwt-token',
-      };
+      mockRequest.headers = { authorization: 'Bearer invalid-jwt-token' };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Invalid token',
+        success: false,
+        message: 'Invalid token',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject token when user not found', async () => {
-      const token = jwt.sign({ userId: 'nonexistent-user', email: 'test@example.com' }, process.env.JWT_SECRET!);
-      mockRequest.headers = {
-        authorization: `Bearer ${token}`,
-      };
+      const token = jwt.sign(
+        { userId: 'nonexistent-user', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
 
-      mockRedis.get.mockResolvedValue(null); // Token not blacklisted
-      mockPrisma.user.findUnique.mockResolvedValue(null); // User not found
+      mockPrisma.user.findUnique.mockResolvedValue(null);
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'User not found',
+        success: false,
+        message: 'User not found',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should handle expired JWT token', async () => {
       const expiredToken = jwt.sign(
-        { userId: 'test-user-id', email: 'test@example.com' },
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
         process.env.JWT_SECRET!,
-        { expiresIn: '-1h' } // Expired 1 hour ago
+        { expiresIn: '-1h' }
       );
-      mockRequest.headers = {
-        authorization: `Bearer ${expiredToken}`,
-      };
+      mockRequest.headers = { authorization: `Bearer ${expiredToken}` };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Invalid token',
+        success: false,
+        message: 'Invalid token',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should handle Redis connection errors gracefully', async () => {
-      const token = jwt.sign({ userId: 'test-user-id', email: 'test@example.com' }, process.env.JWT_SECRET!);
-      mockRequest.headers = {
-        authorization: `Bearer ${token}`,
-      };
+    it('should handle tokenBlacklist Prisma errors gracefully', async () => {
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
 
-      mockRedis.get.mockRejectedValue(new Error('Redis connection failed'));
+      mockPrisma.tokenBlacklist.findUnique.mockRejectedValue(new Error('DB connection failed'));
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(500);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Internal server error',
+        success: false,
+        message: 'Internal server error',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should handle database connection errors', async () => {
-      const token = jwt.sign({ userId: 'test-user-id', email: 'test@example.com' }, process.env.JWT_SECRET!);
-      mockRequest.headers = {
-        authorization: `Bearer ${token}`,
-      };
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
 
-      mockRedis.get.mockResolvedValue(null);
       mockPrisma.user.findUnique.mockRejectedValue(new Error('Database connection failed'));
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(500);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Internal server error',
+        success: false,
+        message: 'Internal server error',
       });
       expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
-  describe('blacklistToken', () => {
-    it('should blacklist token successfully', async () => {
-      const token = 'valid-jwt-token';
-      const decodedToken = { userId: 'test-user-id', exp: Math.floor(Date.now() / 1000) + 3600 };
-
-      jest.spyOn(jwt, 'decode').mockReturnValue(decodedToken as any);
-      mockRedis.set.mockResolvedValue('OK');
-      mockPrisma.tokenBlacklist.create.mockResolvedValue({
-        id: 'blacklist-id',
-        token,
-        userId: decodedToken.userId,
-        expiresAt: new Date(decodedToken.exp * 1000),
-      });
-
-      const result = await blacklistToken(token);
-
-      expect(mockRedis.set).toHaveBeenCalledWith(
-        `blacklist:${token}`,
-        'true',
-        'EX',
-        expect.any(Number)
+  describe('token type validation', () => {
+    it('should reject refresh token used as access token', async () => {
+      const refreshToken = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'refresh' },
+        process.env.JWT_SECRET!
       );
-      expect(mockPrisma.tokenBlacklist.create).toHaveBeenCalledWith({
-        data: {
-          token,
-          userId: decodedToken.userId,
-          expiresAt: new Date(decodedToken.exp * 1000),
-        },
+      mockRequest.headers = { authorization: `Bearer ${refreshToken}` };
+
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        success: false,
+        message: 'Invalid token type',
       });
-      expect(result).toBe(true);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should handle invalid token during blacklisting', async () => {
-      const invalidToken = 'invalid-token';
-
-      jest.spyOn(jwt, 'decode').mockReturnValue(null);
-
-      const result = await blacklistToken(invalidToken);
-
-      expect(result).toBe(false);
-      expect(mockRedis.set).not.toHaveBeenCalled();
-      expect(mockPrisma.tokenBlacklist.create).not.toHaveBeenCalled();
-    });
-
-    it('should handle Redis errors during blacklisting', async () => {
-      const token = 'valid-jwt-token';
-      const decodedToken = { userId: 'test-user-id', exp: Math.floor(Date.now() / 1000) + 3600 };
-
-      jest.spyOn(jwt, 'decode').mockReturnValue(decodedToken as any);
-      mockRedis.set.mockRejectedValue(new Error('Redis error'));
-
-      const result = await blacklistToken(token);
-
-      expect(result).toBe(false);
-      expect(mockPrisma.tokenBlacklist.create).not.toHaveBeenCalled();
-    });
-
-    it('should handle database errors during blacklisting', async () => {
-      const token = 'valid-jwt-token';
-      const decodedToken = { userId: 'test-user-id', exp: Math.floor(Date.now() / 1000) + 3600 };
-
-      jest.spyOn(jwt, 'decode').mockReturnValue(decodedToken as any);
-      mockRedis.set.mockResolvedValue('OK');
-      mockPrisma.tokenBlacklist.create.mockRejectedValue(new Error('Database error'));
-
-      const result = await blacklistToken(token);
-
-      expect(result).toBe(false);
-    });
-
-    it('should calculate correct TTL for token expiration', async () => {
-      const token = 'valid-jwt-token';
-      const expTime = Math.floor(Date.now() / 1000) + 7200; // 2 hours from now
-      const decodedToken = { userId: 'test-user-id', exp: expTime };
-
-      jest.spyOn(jwt, 'decode').mockReturnValue(decodedToken as any);
-      mockRedis.set.mockResolvedValue('OK');
-      mockPrisma.tokenBlacklist.create.mockResolvedValue({} as any);
-
-      await blacklistToken(token);
-
-      const expectedTtl = expTime - Math.floor(Date.now() / 1000);
-      expect(mockRedis.set).toHaveBeenCalledWith(
-        `blacklist:${token}`,
-        'true',
-        'EX',
-        expect.any(Number)
+    it('should reject token without type field', async () => {
+      const tokenNoType = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com' },
+        process.env.JWT_SECRET!
       );
+      mockRequest.headers = { authorization: `Bearer ${tokenNoType}` };
 
-      // Verify TTL is approximately correct (within 10 seconds tolerance)
-      const actualTtl = (mockRedis.set as jest.Mock).mock.calls[0][3];
-      expect(Math.abs(actualTtl - expectedTtl)).toBeLessThan(10);
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({
+        success: false,
+        message: 'Invalid token type',
+      });
     });
 
-    it('should handle expired token during blacklisting', async () => {
-      const token = 'expired-jwt-token';
-      const expiredTime = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
-      const decodedToken = { userId: 'test-user-id', exp: expiredTime };
+    it('should handle blacklist check via Prisma not Redis', async () => {
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
+      mockPrisma.tokenBlacklist.findUnique.mockResolvedValue({ token });
 
-      jest.spyOn(jwt, 'decode').mockReturnValue(decodedToken as any);
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
-      const result = await blacklistToken(token);
+      expect(mockPrisma.tokenBlacklist.findUnique).toHaveBeenCalledWith({ where: { token } });
+      expect(responseStatus).toHaveBeenCalledWith(401);
+    });
 
-      expect(result).toBe(false);
-      expect(mockRedis.set).not.toHaveBeenCalled();
-      expect(mockPrisma.tokenBlacklist.create).not.toHaveBeenCalled();
+    it('should handle multiple sequential blacklist checks', async () => {
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
+
+      // First request: not blacklisted
+      mockPrisma.tokenBlacklist.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.user.findUnique.mockResolvedValueOnce({ id: 'test-user-id', email: 'test@example.com' });
+
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
+      expect(mockNext).toHaveBeenCalledTimes(1);
+
+      jest.clearAllMocks();
+
+      // Second request: token now blacklisted
+      mockPrisma.tokenBlacklist.findUnique.mockResolvedValueOnce({ token });
+
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should calculate correct TTL awareness via exp field in token', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 3600;
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access', exp },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${token}` };
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 'test-user-id', email: 'test@example.com' });
+
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('should reject truly expired token regardless of blacklist', async () => {
+      const expiredToken = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!,
+        { expiresIn: '-1h' }
+      );
+      mockRequest.headers = { authorization: `Bearer ${expiredToken}` };
+
+      await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
+
+      expect(responseStatus).toHaveBeenCalledWith(401);
+      expect(responseJson).toHaveBeenCalledWith({ success: false, message: 'Invalid token' });
     });
   });
 
   describe('Token Validation Edge Cases', () => {
     it('should handle malformed JWT token structure', async () => {
-      mockRequest.headers = {
-        authorization: 'Bearer not.a.valid.jwt.structure.here',
-      };
+      mockRequest.headers = { authorization: 'Bearer not.a.valid.jwt.structure.here' };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Invalid token',
+        success: false,
+        message: 'Invalid token',
       });
     });
 
     it('should handle JWT with invalid signature', async () => {
       const tokenWithWrongSignature = jwt.sign(
-        { userId: 'test-user-id', email: 'test@example.com' },
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
         'wrong-secret-key'
       );
-      mockRequest.headers = {
-        authorization: `Bearer ${tokenWithWrongSignature}`,
-      };
+      mockRequest.headers = { authorization: `Bearer ${tokenWithWrongSignature}` };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Invalid token',
+        success: false,
+        message: 'Invalid token',
       });
     });
 
     it('should handle missing JWT_SECRET environment variable', async () => {
       delete process.env.JWT_SECRET;
 
-      const token = 'any-token';
-      mockRequest.headers = {
-        authorization: `Bearer ${token}`,
-      };
+      mockRequest.headers = { authorization: 'Bearer any-token' };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(500);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Internal server error',
+        success: false,
+        message: 'JWT secret not configured',
       });
 
-      // Restore for other tests
       process.env.JWT_SECRET = 'test-secret-key';
     });
   });
 
   describe('Security Features', () => {
     it('should prevent token reuse after blacklisting', async () => {
-      const token = jwt.sign({ userId: 'test-user-id', email: 'test@example.com' }, process.env.JWT_SECRET!);
-
-      // First request should work
+      const token = jwt.sign(
+        { userId: 'test-user-id', email: 'test@example.com', type: 'access' },
+        process.env.JWT_SECRET!
+      );
       mockRequest.headers = { authorization: `Bearer ${token}` };
-      mockRedis.get.mockResolvedValue(null);
-      mockPrisma.user.findUnique.mockResolvedValue({
-        id: 'test-user-id',
-        email: 'test@example.com',
-        username: 'testuser',
-      });
+
+      // First request — valid
+      mockPrisma.tokenBlacklist.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 'test-user-id', email: 'test@example.com' });
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
       expect(mockNext).toHaveBeenCalled();
 
-      // Reset mocks
       jest.clearAllMocks();
 
-      // Blacklist the token
-      mockRedis.get.mockResolvedValue('blacklisted');
+      // Second request — blacklisted
+      mockPrisma.tokenBlacklist.findUnique.mockResolvedValue({ token });
 
-      // Second request should fail
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
       expect(responseStatus).toHaveBeenCalledWith(401);
-      expect(responseJson).toHaveBeenCalledWith({
-        error: 'Token has been revoked',
-      });
+      expect(responseJson).toHaveBeenCalledWith({ success: false, message: 'Token has been revoked' });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should validate token payload structure', async () => {
-      const tokenWithMissingFields = jwt.sign({ userId: 'test-user-id' }, process.env.JWT_SECRET!); // Missing email
-      mockRequest.headers = {
-        authorization: `Bearer ${tokenWithMissingFields}`,
-      };
-
-      mockRedis.get.mockResolvedValue(null);
+      const tokenWithMissingType = jwt.sign(
+        { userId: 'test-user-id' },
+        process.env.JWT_SECRET!
+      );
+      mockRequest.headers = { authorization: `Bearer ${tokenWithMissingType}` };
 
       await authenticateToken(mockRequest as AuthRequest, mockResponse as Response, mockNext);
 
       expect(responseStatus).toHaveBeenCalledWith(401);
       expect(responseJson).toHaveBeenCalledWith({
-        error: 'Invalid token',
+        success: false,
+        message: 'Invalid token type',
       });
     });
   });
