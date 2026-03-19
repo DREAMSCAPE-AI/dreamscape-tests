@@ -442,3 +442,42 @@ jobs:
             echo "  E2E tests: ${{ needs.e2e-tests.result }}"
             exit 0
           fi
+
+  # CD staging — uniquement si tous les tests passent ET que le trigger vient de main
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [parse-context, test]
+    if: needs.test.result == 'success' && needs.parse-context.outputs.branch == 'main'
+    steps:
+      - name: Trigger staging deployment on dreamscape-infra
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DISPATCH_TOKEN }}
+          script: |
+            const version = '${{ needs.parse-context.outputs.source_sha }}'.substring(0, 12);
+            const sourceRepo = '${{ needs.parse-context.outputs.source_repo }}';
+
+            console.log(`🚀 All tests passed — triggering staging deployment`);
+            console.log(`   Source: ${sourceRepo} @ main`);
+            console.log(`   Version: ${version}`);
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: 'DREAMSCAPE-AI',
+                repo: 'dreamscape-infra',
+                workflow_id: 'bigpods-cd.yml',
+                ref: 'main',
+                inputs: {
+                  environment: 'staging',
+                  version: version,
+                  deployment_strategy: 'rolling',
+                  force_deployment: 'false'
+                }
+              });
+
+              console.log('✅ Staging deployment triggered successfully');
+            } catch (error) {
+              console.error('❌ Failed to trigger staging deployment:', error);
+              throw error;
+            }
