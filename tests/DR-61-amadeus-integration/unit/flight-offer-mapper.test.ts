@@ -104,7 +104,24 @@ describe('FlightOfferMapper', () => {
         id: 'min-123',
         source: 'GDS',
         lastTicketingDate: '2025-10-15',
-        itineraries: [],
+        itineraries: [
+          {
+            duration: 'PT2H',
+            segments: [
+              {
+                departure: { iataCode: 'CDG', at: '2025-10-15T10:00:00' },
+                arrival: { iataCode: 'LHR', at: '2025-10-15T12:00:00' },
+                carrierCode: 'AF',
+                number: '001',
+                aircraft: { code: '320' },
+                duration: 'PT2H',
+                id: 'seg-1',
+                numberOfStops: 0,
+                blacklistedInEU: false
+              }
+            ]
+          }
+        ],
         price: {
           currency: 'USD',
           total: '100',
@@ -127,33 +144,30 @@ describe('FlightOfferMapper', () => {
 
   describe('mapToDTOs', () => {
     it('should map multiple Amadeus offers', () => {
+      const minItinerary = (seg: string) => ([{
+        duration: 'PT2H',
+        segments: [{
+          departure: { iataCode: 'CDG', at: '2025-10-15T10:00:00' },
+          arrival: { iataCode: 'LHR', at: '2025-10-15T12:00:00' },
+          carrierCode: 'AF', number: '001', aircraft: { code: '320' },
+          duration: 'PT2H', id: seg, numberOfStops: 0, blacklistedInEU: false
+        }]
+      }]);
       const offers = [
         {
           id: 'offer-1',
           source: 'GDS',
           lastTicketingDate: '2025-10-15',
-          itineraries: [],
-          price: {
-            currency: 'USD',
-            total: '100',
-            base: '90',
-            fees: [],
-            grandTotal: '100'
-          },
+          itineraries: minItinerary('seg-1'),
+          price: { currency: 'USD', total: '100', base: '90', fees: [], grandTotal: '100' },
           travelerPricings: []
         },
         {
           id: 'offer-2',
           source: 'GDS',
           lastTicketingDate: '2025-10-16',
-          itineraries: [],
-          price: {
-            currency: 'EUR',
-            total: '200',
-            base: '180',
-            fees: [],
-            grandTotal: '200'
-          },
+          itineraries: minItinerary('seg-2'),
+          price: { currency: 'EUR', total: '200', base: '180', fees: [], grandTotal: '200' },
           travelerPricings: []
         }
       ];
@@ -166,7 +180,7 @@ describe('FlightOfferMapper', () => {
     });
 
     it('should throw error for non-array input', () => {
-      expect(() => FlightOfferMapper.mapToDTOs({} as any)).toThrow('expected an array');
+      expect(() => FlightOfferMapper.mapToDTOs({} as any)).toThrow('Expected an array');
     });
   });
 

@@ -30,7 +30,7 @@ jest.mock('@dreamscape/db', () => ({
 }));
 
 // Import after mocking
-import { authenticateToken, blacklistToken } from '../../../dreamscape-services/user/src/middleware/auth';
+import { authenticateToken, blacklistToken } from '../../../../dreamscape-services/user/src/middleware/auth';
 
 // Extend Request type for testing
 interface AuthRequest extends Request {
