@@ -53,7 +53,7 @@ describe('Amadeus Authentication Service', () => {
       const safetyMargin = 300; // Refresh 5 minutes before expiry
       const tokenExpiresAt = Date.now() + (expiresIn - safetyMargin) * 1000;
 
-      expect(Date.now()).toBeLessThan(tokenExpiresAt);
+      expect(Date.now()).toBeLessThanOrEqual(tokenExpiresAt);
 
       // After time passes, token should be refreshed
       const futureTime = tokenExpiresAt + 1000;

@@ -3,8 +3,8 @@
  * Ticket: DR-132 - VOYAGE-001.3 : Mapping des réponses Flight API
  */
 
-import { FlightOfferMapper } from '../../../dreamscape-services/voyage/src/mappers/FlightOfferMapper';
-import { FlightOfferDTO } from '../../../dreamscape-services/voyage/src/dto/FlightOffer.dto';
+import { FlightOfferMapper } from '../../../../dreamscape-services/voyage/src/mappers/FlightOfferMapper';
+import { FlightOfferDTO } from '../../../../dreamscape-services/voyage/src/dto/FlightOffer.dto';
 
 describe('FlightOfferMapper', () => {
   describe('mapToDTO', () => {
