@@ -40,7 +40,7 @@
     "test:coverage:auth": "jest --config=jest.config.js --testPathPattern=\"auth-middleware\" --coverageDirectory=coverage/auth",
     "test:coverage:user": "jest --config=jest.config.js --testPathPattern=\"(user-service|profile-routes|simple-unit)\" --coverageDirectory=coverage/user",
     "test:coverage:payment": "jest --config=jest.config.js --testPathPattern=\"payment-service\" --coverageDirectory=coverage/payment --passWithNoTests",
-    "test:coverage:voyage": "jest --config=jest.config.js --testPathPattern=\"(voyage-service|DR-61.*unit|DR-67.*unit|DR-69.*unit)\" --coverageDirectory=coverage/voyage",
+    "test:coverage:voyage": "jest --config=jest.config.js --testPathPattern=\"(DR-61.*unit|DR-67.*unit|DR-69.*unit)\" --coverageDirectory=coverage/voyage",
     "test:coverage:web": "jest --config=jest.config.js --testPathPattern=\"web-client\" --coverageDirectory=coverage/web-client --passWithNoTests",
     "test:coverage:panorama": "jest --config=jest.config.js --testPathPattern=\"panorama-service\" --coverageDirectory=coverage/panorama --passWithNoTests",
     "test:dr59": "bash scripts/test-profile-dr59.sh",

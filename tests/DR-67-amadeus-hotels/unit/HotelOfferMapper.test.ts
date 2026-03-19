@@ -1,5 +1,5 @@
-import { HotelOfferMapper } from '../../../../../dreamscape-services/voyage/src/mappers/HotelOfferMapper';
-import { HotelOfferDTO, SimplifiedHotelOfferDTO } from '../../../../../dreamscape-services/voyage/src/dto/HotelOffer.dto';
+import { HotelOfferMapper } from '../../../../dreamscape-services/voyage/src/mappers/HotelOfferMapper';
+import { HotelOfferDTO, SimplifiedHotelOfferDTO } from '../../../../dreamscape-services/voyage/src/dto/HotelOffer.dto';
 
 describe('HotelOfferMapper', () => {
   describe('mapToDTO', () => {

@@ -61,5 +61,14 @@ module.exports = {
   },
   
   // Module file extensions
-  moduleFileExtensions: ['js', 'json', 'ts', 'tsx']
+  moduleFileExtensions: ['js', 'json', 'ts', 'tsx'],
+
+  // Allow resolution of service-level node_modules (redis, multer, ioredis, etc.)
+  modulePaths: [
+    '<rootDir>/../dreamscape-services/auth/node_modules',
+    '<rootDir>/../dreamscape-services/user/node_modules',
+    '<rootDir>/../dreamscape-services/ai/node_modules',
+    '<rootDir>/../dreamscape-services/payment/node_modules',
+    '<rootDir>/../dreamscape-services/voyage/node_modules'
+  ]
 };
