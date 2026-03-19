@@ -92,11 +92,11 @@ describe('FlightOfferMapper', () => {
     });
 
     it('should throw error for null offer', () => {
-      expect(() => FlightOfferMapper.mapToDTO(null)).toThrow('Invalid Amadeus offer');
+      expect(() => FlightOfferMapper.mapToDTO(null)).toThrow('Flight offer is null or undefined');
     });
 
     it('should throw error for undefined offer', () => {
-      expect(() => FlightOfferMapper.mapToDTO(undefined)).toThrow('Invalid Amadeus offer');
+      expect(() => FlightOfferMapper.mapToDTO(undefined)).toThrow('Flight offer is null or undefined');
     });
 
     it('should handle missing optional fields with defaults', () => {
