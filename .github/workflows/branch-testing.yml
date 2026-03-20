@@ -447,6 +447,42 @@ jobs:
             exit 0
           fi
 
+  # Callback — met à jour le commit status sur le repo source
+  update-source-status:
+    name: Update Source Repo Status
+    runs-on: ubuntu-latest
+    needs: [parse-context, test]
+    if: always() && needs.parse-context.outputs.source_repo != 'manual'
+    steps:
+      - name: Update commit status on source repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DISPATCH_TOKEN_TEST }}
+          script: |
+            const sourceRepo = '${{ needs.parse-context.outputs.source_repo }}';
+            const sha = '${{ needs.parse-context.outputs.source_sha }}';
+            const testResult = '${{ needs.test.result }}';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const state = testResult === 'success' ? 'success' : 'failure';
+            const description = state === 'success'
+              ? 'All tests passed'
+              : 'Some tests failed — check details';
+
+            console.log(`Updating status on ${sourceRepo} @ ${sha}: ${state}`);
+
+            await github.rest.repos.createCommitStatus({
+              owner: 'DREAMSCAPE-AI',
+              repo: sourceRepo,
+              sha: sha,
+              state: state,
+              target_url: runUrl,
+              description: description,
+              context: 'ci/unified-pipeline'
+            });
+
+            console.log(`✅ Status updated to ${state}`);
+
   # CD staging — uniquement si tous les tests passent ET que le trigger vient de main
   deploy-staging:
     name: Deploy to Staging
