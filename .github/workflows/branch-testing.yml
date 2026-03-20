@@ -457,7 +457,7 @@ jobs:
       - name: Trigger staging deployment on dreamscape-infra
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.DISPATCH_TOKEN }}
+          github-token: ${{ secrets.DISPATCH_TOKEN_TEST }}
           script: |
             const version = '${{ needs.parse-context.outputs.source_sha }}'.substring(0, 12);
             const sourceRepo = '${{ needs.parse-context.outputs.source_repo }}';
