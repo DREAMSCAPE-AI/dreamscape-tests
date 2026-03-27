@@ -26,6 +26,8 @@
     "test:health:realdb": "jest --config=jest.config.realdb.js",
     "test:health:realdb:auth": "jest --config=jest.config.realdb.js --testPathPattern=auth-health",
     "test:health:realdb:verbose": "jest --config=jest.config.realdb.js --verbose",
+    "test:dr538": "jest --config=jest.config.auth-unit.js --verbose",
+    "test:dr538:coverage": "jest --config=jest.config.auth-unit.js --coverage",
     "test:performance": "npm run test:performance:api && npm run test:performance:frontend",
     "test:performance:api": "echo 'API performance tests - to be implemented'",
     "test:performance:frontend": "echo 'Frontend performance tests - to be implemented'",
