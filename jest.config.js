@@ -31,7 +31,16 @@ module.exports = {
     '^@dreamscape/db$': '<rootDir>/../dreamscape-services/db/index.ts',
     '^@dreamscape/kafka$': '<rootDir>/../dreamscape-services/shared/kafka/src/index.ts',
     '^@/(.*)$': '<rootDir>/../dreamscape-services/voyage/src/$1',
-    '^@ai/(.*)$': '<rootDir>/../dreamscape-services/ai/src/$1'
+    '^@ai/(.*)$': '<rootDir>/../dreamscape-services/ai/src/$1',
+    // User-service internal aliases
+    '^@controllers/(.*)$': '<rootDir>/../dreamscape-services/user/src/controllers/$1',
+    '^@services/(.*)$': '<rootDir>/../dreamscape-services/user/src/services/$1',
+    '^@middleware/(.*)$': '<rootDir>/../dreamscape-services/user/src/middleware/$1',
+    '^@routes/(.*)$': '<rootDir>/../dreamscape-services/user/src/routes/$1',
+    '^@types/(.*)$': '<rootDir>/../dreamscape-services/user/src/types/$1',
+    '^@types_onboarding$': '<rootDir>/../dreamscape-services/user/src/types/onboarding.ts',
+    // Canonical resolution so jest.mock('express-rate-limit') intercepts the same module instance
+    '^express-rate-limit$': '<rootDir>/../dreamscape-services/user/node_modules/express-rate-limit'
   },
 
   // Timeout for tests
@@ -53,7 +62,13 @@ module.exports = {
           '@/*': ['../dreamscape-services/voyage/src/*'],
           '@ai/*': ['../dreamscape-services/ai/src/*'],
           '@dreamscape/db': ['../dreamscape-services/db/index.ts'],
-          '@dreamscape/kafka': ['../dreamscape-services/shared/kafka/src/index.ts']
+          '@dreamscape/kafka': ['../dreamscape-services/shared/kafka/src/index.ts'],
+          '@controllers/*': ['../dreamscape-services/user/src/controllers/*'],
+          '@services/*': ['../dreamscape-services/user/src/services/*'],
+          '@middleware/*': ['../dreamscape-services/user/src/middleware/*'],
+          '@routes/*': ['../dreamscape-services/user/src/routes/*'],
+          '@types/*': ['../dreamscape-services/user/src/types/*'],
+          '@types_onboarding': ['../dreamscape-services/user/src/types/onboarding.ts']
         }
       }
     }],
