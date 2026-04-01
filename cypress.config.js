@@ -6,7 +6,7 @@ module.exports = defineConfig({
     baseUrl: 'http://localhost:5173',
     viewportWidth: 1280,
     viewportHeight: 720,
-    supportFile: false,
+    supportFile: 'cypress/support/e2e.js',
     specPattern: 'tests/e2e/**/*.cy.{js,jsx,ts,tsx}',
     screenshotsFolder: 'cypress/screenshots',
     videosFolder: 'cypress/videos',
@@ -49,9 +49,22 @@ module.exports = defineConfig({
     },
     env: {
       AUTH_SERVICE_URL: 'http://localhost:3001',
-      USER_SERVICE_URL: 'http://localhost:3003',
+      USER_SERVICE_URL: 'http://localhost:3002',
+      VOYAGE_SERVICE_URL: 'http://localhost:3003',
+      AI_SERVICE_URL: 'http://localhost:3005',
+      GATEWAY_URL: 'http://localhost:4000',
       WEB_CLIENT_URL: 'http://localhost:5173',
-      KAFKA_BROKERS: 'localhost:9092'
-    }
+      KAFKA_BROKERS: 'localhost:9092',
+      // Seed user with pre-existing bookings (created via npm run db:seed)
+      SEED_USER_EMAIL: 'seed@dreamscape.test',
+      SEED_USER_PASSWORD: 'SeedPass123!'
+    },
+    retries: {
+      runMode: 2,   // retry failed tests twice in CI
+      openMode: 0,
+    },
+    defaultCommandTimeout: 8000,
+    requestTimeout: 15000,
+    responseTimeout: 15000
   },
 });

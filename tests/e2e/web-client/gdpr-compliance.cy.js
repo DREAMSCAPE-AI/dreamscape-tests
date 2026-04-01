@@ -1,7 +1,8 @@
 describe('GDPR Compliance - Cookie Consent Banner', () => {
   beforeEach(() => {
-    // Ensure clean state for cookie consent tests
-    localStorage.removeItem('cookie-consent');
+    // Ensure clean state for cookie consent tests — must visit first to clear AUT localStorage
+    cy.visit('http://localhost:5173/');
+    cy.clearLocalStorage('cookie-consent');
   });
 
   it('should show cookie banner on first visit', () => {
@@ -115,21 +116,14 @@ describe('GDPR Compliance - Cookie Consent Banner', () => {
 
 describe('GDPR Compliance - Settings Data & Privacy Section', () => {
   const testUser = {
-    email: 'testuser@dreamscape.com',
-    password: 'TestPassword123!',
+    email: Cypress.env('SEED_USER_EMAIL') || 'seed@dreamscape.test',
+    password: Cypress.env('SEED_USER_PASSWORD') || 'SeedPass123!',
   };
 
   beforeEach(() => {
-    // Login before each test
-    cy.visit('http://localhost:5173/auth');
-
-    cy.get('input[type="email"]', { timeout: 10000 }).type(testUser.email);
-    cy.get('input[type="password"]').type(testUser.password);
-    cy.get('button[type="submit"]').click();
-
-    // Wait for successful login
-    cy.url().should('not.include', '/auth');
-    cy.wait(1000);
+    // Login before each test using programmatic API to avoid UI flakiness
+    cy.visit('http://localhost:5173/');
+    cy.loginByApi(testUser.email, testUser.password);
   });
 
   it('should display "Data & Privacy" tab in settings', () => {
@@ -401,13 +395,12 @@ describe('GDPR Compliance - Privacy Policy Page', () => {
   });
 
   it('should show accept button for logged-in user', () => {
-    // Login first
-    cy.visit('http://localhost:5173/auth');
-    cy.get('input[type="email"]', { timeout: 10000 }).type('testuser@dreamscape.com');
-    cy.get('input[type="password"]').type('TestPassword123!');
-    cy.get('button[type="submit"]').click();
-    cy.url().should('not.include', '/auth');
-    cy.wait(1000);
+    // Login first via API
+    cy.visit('http://localhost:5173/');
+    cy.loginByApi(
+      Cypress.env('SEED_USER_EMAIL') || 'seed@dreamscape.test',
+      Cypress.env('SEED_USER_PASSWORD') || 'SeedPass123!'
+    );
 
     // Mock privacy policy and acceptance
     cy.intercept('GET', '/api/v1/users/gdpr/privacy-policy', {
