@@ -30,6 +30,8 @@
     "test:dr538:coverage": "jest --config=jest.config.auth-unit.js --coverage",
     "test:test002": "jest --config=jest.config.test002.js --verbose",
     "test:test002:coverage": "jest --config=jest.config.test002.js --coverage",
+    "test:test003": "jest --config=jest.config.test003.js --verbose",
+    "test:test003:coverage": "jest --config=jest.config.test003.js --coverage",
     "test:performance": "npm run test:performance:api && npm run test:performance:frontend",
     "test:performance:api": "echo 'API performance tests - to be implemented'",
     "test:performance:frontend": "echo 'Frontend performance tests - to be implemented'",
