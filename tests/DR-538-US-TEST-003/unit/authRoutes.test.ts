@@ -64,6 +64,11 @@ app.use(express.json());
 app.use(cookieParser());
 app.use('/api/v1/auth', authRouter);
 
+// App without cookieParser — used to cover the `if (!req.cookies)` branch in /logout
+const appNoCookies = express();
+appNoCookies.use(express.json());
+appNoCookies.use('/api/v1/auth', authRouter);
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const JWT_SECRET = 'test-secret';
@@ -332,6 +337,23 @@ describe('POST /api/v1/auth/login', () => {
 
     expect(res.status).toBe(500);
   });
+
+  it('covers Kafka publishLogin .catch when publishLogin rejects', async () => {
+    const KafkaService = require('@services/KafkaService').default;
+    KafkaService.publishLogin.mockRejectedValueOnce(new Error('kafka fail'));
+    mockAuthService.login.mockResolvedValue({
+      success: true,
+      message: 'Login successful',
+      data: { user: validUser, tokens: { ...validTokens } },
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send(validBody);
+
+    // .catch swallows the error — route still returns 200
+    expect(res.status).toBe(200);
+  });
 });
 
 // ─── POST /refresh ────────────────────────────────────────────────────────────
@@ -365,6 +387,19 @@ describe('POST /api/v1/auth/refresh', () => {
       .send({ refreshToken: 'token-from-body' });
 
     expect(res.status).toBe(200);
+  });
+
+  it('parses refresh token from raw Cookie header when cookieParser is absent', async () => {
+    mockAuthService.refreshToken.mockResolvedValue(successResult);
+
+    // appNoCookies has no cookieParser → req.cookies is undefined
+    // the route falls back to manually parsing req.headers.cookie (lines 302-306)
+    const res = await request(appNoCookies)
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', 'refreshToken=raw-cookie-token');
+
+    expect(res.status).toBe(200);
+    expect(mockAuthService.refreshToken).toHaveBeenCalledWith('raw-cookie-token');
   });
 
   it('returns 401 when no refresh token provided', async () => {
@@ -403,25 +438,81 @@ describe('POST /api/v1/auth/refresh', () => {
 // ─── POST /logout ─────────────────────────────────────────────────────────────
 
 describe('POST /api/v1/auth/logout', () => {
-  // TODO(human): implement the POST /logout tests below.
-  //
-  // This route has 3 interesting paths to cover:
-  // 1. Logout with a valid refresh token cookie
-  //    → AuthService.logout is called, cookie is cleared, returns 200
-  // 2. Logout without a refresh token (cookie absent)
-  //    → AuthService.logout is NOT called, cookie still cleared, returns 200
-  // 3. AuthService.logout throws
-  //    → returns 500
-  //
-  // Hints:
-  // - Set the cookie with `.set('Cookie', 'refreshToken=xxx')`
-  // - Check `res.headers['set-cookie']` to verify the cookie is cleared
-  //   (cleared cookie has `Max-Age=0` or `Expires` in the past)
-  // - `mockAuthService.logout.mockResolvedValue({ success: true, message: '...' })`
-  // - For the no-cookie path, just don't set a Cookie header
+  it('returns 200 and clears cookie when refresh token cookie is present', async () => {
+    mockAuthService.logout.mockResolvedValue({ success: true, message: 'Logged out successfully' });
 
-  it('placeholder — implement the 3 logout scenarios above', () => {
-    expect(true).toBe(true);
+    const res = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refreshToken=some-refresh-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(mockAuthService.logout).toHaveBeenCalledWith('some-refresh-token', undefined);
+    const cookie = res.headers['set-cookie']?.[0] ?? '';
+    expect(cookie).toContain('refreshToken=;');
+  });
+
+  it('returns 200 and clears cookie when no refresh token cookie is present', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/logout');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(mockAuthService.logout).not.toHaveBeenCalled();
+    const cookie = res.headers['set-cookie']?.[0] ?? '';
+    expect(cookie).toContain('refreshToken=;');
+  });
+
+  it('publishes Kafka logout event when logout result contains userId', async () => {
+    const KafkaService = require('@services/KafkaService').default;
+    mockAuthService.logout.mockResolvedValue({
+      success: true,
+      message: 'Logged out',
+      userId: 'u1',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refreshToken=tok-with-user');
+
+    expect(res.status).toBe(200);
+    expect(KafkaService.publishLogout).toHaveBeenCalled();
+  });
+
+  it('covers Kafka publishLogout .catch when publishLogout rejects', async () => {
+    const KafkaService = require('@services/KafkaService').default;
+    KafkaService.publishLogout.mockRejectedValueOnce(new Error('kafka fail'));
+    mockAuthService.logout.mockResolvedValue({
+      success: true,
+      message: 'Logged out',
+      userId: 'u1',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refreshToken=tok-with-user');
+
+    // .catch swallows the error — route still returns 200
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 500 when AuthService.logout throws', async () => {
+    mockAuthService.logout.mockRejectedValue(new Error('crash'));
+
+    const res = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refreshToken=some-token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 500 with server configuration error when cookieParser is missing', async () => {
+    const res = await request(appNoCookies)
+      .post('/api/v1/auth/logout');
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Server configuration error');
   });
 });
 
@@ -452,6 +543,19 @@ describe('POST /api/v1/auth/logout-all', () => {
     (mockPrisma.tokenBlacklist.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ id: 'u1', email: 'test@test.com' });
     mockAuthService.logoutAllDevices.mockResolvedValue({ success: false, message: 'error' });
+
+    const res = await request(app)
+      .post('/api/v1/auth/logout-all')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(500);
+  });
+
+  it('returns 500 when AuthService.logoutAllDevices throws', async () => {
+    const token = makeAccessToken();
+    (mockPrisma.tokenBlacklist.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ id: 'u1', email: 'test@test.com' });
+    mockAuthService.logoutAllDevices.mockRejectedValue(new Error('crash'));
 
     const res = await request(app)
       .post('/api/v1/auth/logout-all')
@@ -574,6 +678,119 @@ describe('PUT /api/v1/auth/profile', () => {
 
     expect(res.status).toBe(401);
   });
+
+  it('returns 500 when AuthService.updateProfile throws', async () => {
+    authSetup();
+    mockAuthService.updateProfile.mockRejectedValue(new Error('crash'));
+
+    const res = await request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send({ firstName: 'New' });
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ─── POST /change-password ───────────────────────────────────────────────────
+
+describe('POST /api/v1/auth/change-password', () => {
+  const validBody = {
+    currentPassword: 'OldPass1!',
+    newPassword: 'NewPass1!',
+  };
+
+  function authSetup() {
+    (mockPrisma.tokenBlacklist.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ id: 'u1', email: 'test@test.com' });
+  }
+
+  it('returns 200 and clears cookie on successful password change', async () => {
+    authSetup();
+    mockAuthService.changePassword.mockResolvedValue({ success: true, message: 'Password changed' });
+
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const cookie = res.headers['set-cookie']?.[0] ?? '';
+    expect(cookie).toContain('refreshToken=;');
+  });
+
+  it('covers Kafka publishPasswordChanged .catch when it rejects', async () => {
+    authSetup();
+    const KafkaService = require('@services/KafkaService').default;
+    KafkaService.publishPasswordChanged.mockRejectedValueOnce(new Error('kafka fail'));
+    mockAuthService.changePassword.mockResolvedValue({ success: true, message: 'Password changed' });
+
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send(validBody);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 400 when password change fails', async () => {
+    authSetup();
+    mockAuthService.changePassword.mockResolvedValue({
+      success: false,
+      message: 'Current password is incorrect',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send(validBody);
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 400 when validation fails (newPassword too short)', async () => {
+    authSetup();
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send({ currentPassword: 'OldPass1!', newPassword: 'short' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
+  });
+
+  it('returns 400 when currentPassword is missing', async () => {
+    authSetup();
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send({ newPassword: 'NewPass1!' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
+  });
+
+  it('returns 401 when not authenticated', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .send(validBody);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 500 when AuthService.changePassword throws', async () => {
+    authSetup();
+    mockAuthService.changePassword.mockRejectedValue(new Error('crash'));
+
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${makeAccessToken()}`)
+      .send(validBody);
+
+    expect(res.status).toBe(500);
+  });
 });
 
 // ─── POST /verify-token ───────────────────────────────────────────────────────
@@ -613,5 +830,76 @@ describe('POST /api/v1/auth/test/reset and /test/cleanup', () => {
     mockAuthService.resetTestData.mockResolvedValue({ success: true });
     const res = await request(app).post('/api/v1/auth/test/cleanup');
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── if (!req.user) guard coverage ───────────────────────────────────────────
+// These defensive guards are unreachable via the real authenticateToken.
+// We re-require the router in an isolated module registry with a stub
+// authenticateToken that calls next() without setting req.user.
+
+describe('if (!req.user) guard branches', () => {
+  let appNoUser: express.Application;
+
+  beforeAll(() => {
+    jest.isolateModules(() => {
+      jest.mock('@middleware/auth', () => ({
+        authenticateToken: (_req: any, _res: any, next: any) => next(),
+        authenticateRefreshToken: (_req: any, _res: any, next: any) => next(),
+        optionalAuth: (_req: any, _res: any, next: any) => next(),
+      }));
+      jest.mock('@services/AuthService', () => ({
+        AuthService: {
+          signup: jest.fn(), login: jest.fn(), refreshToken: jest.fn(),
+          logout: jest.fn(), logoutAllDevices: jest.fn(),
+          getUserProfile: jest.fn(), updateProfile: jest.fn(),
+          changePassword: jest.fn(), verifyToken: jest.fn(), resetTestData: jest.fn(),
+        },
+      }));
+      jest.mock('@services/KafkaService', () => ({
+        __esModule: true,
+        default: {
+          publishLogin: jest.fn().mockResolvedValue(undefined),
+          publishLogout: jest.fn().mockResolvedValue(undefined),
+          publishPasswordChanged: jest.fn().mockResolvedValue(undefined),
+        },
+      }));
+      jest.mock('@middleware/rateLimiter', () => ({
+        loginLimiter: (_req: any, _res: any, next: any) => next(),
+        registerLimiter: (_req: any, _res: any, next: any) => next(),
+        refreshLimiter: (_req: any, _res: any, next: any) => next(),
+        authLimiter: (_req: any, _res: any, next: any) => next(),
+      }));
+      const freshRouter = require('../../../../dreamscape-services/auth/src/routes/auth').default;
+      appNoUser = express();
+      appNoUser.use(express.json());
+      appNoUser.use(cookieParser());
+      appNoUser.use('/api/v1/auth', freshRouter);
+    });
+  });
+
+  it('GET /profile returns 401 when req.user is not set', async () => {
+    const res = await request(appNoUser).get('/api/v1/auth/profile');
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('User not authenticated');
+  });
+
+  it('PUT /profile returns 401 when req.user is not set', async () => {
+    const res = await request(appNoUser)
+      .put('/api/v1/auth/profile')
+      .send({ firstName: 'Test' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /change-password returns 401 when req.user is not set', async () => {
+    const res = await request(appNoUser)
+      .post('/api/v1/auth/change-password')
+      .send({ currentPassword: 'OldPass1!', newPassword: 'NewPass1!' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /logout-all returns 401 when req.user is not set', async () => {
+    const res = await request(appNoUser).post('/api/v1/auth/logout-all');
+    expect(res.status).toBe(401);
   });
 });
