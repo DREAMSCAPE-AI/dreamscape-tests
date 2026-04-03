@@ -36,6 +36,11 @@
     "test:test004:coverage": "jest --config=jest.config.test004.js --coverage",
     "test:test022": "jest --config=jest.config.test022.js --verbose",
     "test:test022:coverage": "jest --config=jest.config.test022.js --coverage",
+<<<<<<< HEAD
+=======
+    "test:test023": "jest --config=jest.config.test023.js --verbose",
+    "test:test023:coverage": "jest --config=jest.config.test023.js --coverage",
+>>>>>>> main
     "test:performance": "npm run test:performance:api && npm run test:performance:frontend",
     "test:performance:api": "echo 'API performance tests - to be implemented'",
     "test:performance:frontend": "echo 'Frontend performance tests - to be implemented'",
