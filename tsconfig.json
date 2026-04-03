@@ -18,6 +18,8 @@
   },
   "include": [
     "src",
+    "tests/**/*.ts",
+    "__mocks__/**/*.ts",
     "integration/**/*.ts",
     "performance/**/*",
     "security/**/*",
