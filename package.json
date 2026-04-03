@@ -44,8 +44,6 @@
     "test:test004:coverage": "jest --config=jest.config.test004.js --coverage",
     "test:test022": "jest --config=jest.config.test022.js --verbose",
     "test:test022:coverage": "jest --config=jest.config.test022.js --coverage",
-    "test:test023": "jest --config=jest.config.test023.js --verbose",
-    "test:test023:coverage": "jest --config=jest.config.test023.js --coverage",
     "test:test024": "jest --config=jest.config.test024.js --verbose",
     "test:test024:coverage": "jest --config=jest.config.test024.js --coverage",
     "test:performance": "npm run test:performance:api && npm run test:performance:frontend",
