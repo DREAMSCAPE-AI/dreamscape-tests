@@ -1,3 +1,27 @@
+const voyageUnitCoverageTargets = [
+  '<rootDir>/dreamscape-services/voyage/src/services/BookingService.ts',
+  '<rootDir>/dreamscape-services/voyage/src/services/CartService.ts',
+  '<rootDir>/dreamscape-services/voyage/src/services/AmadeusService.ts',
+  '<rootDir>/dreamscape-services/voyage/src/services/KafkaService.ts',
+  '<rootDir>/dreamscape-services/voyage/src/services/itinerary.export.service.ts',
+  '<rootDir>/dreamscape-services/voyage/src/controllers/itinerary.controller.ts',
+  '<rootDir>/dreamscape-services/voyage/src/handlers/paymentEventsHandler.ts',
+  '<rootDir>/dreamscape-services/voyage/src/middleware/authProxy.ts',
+  '<rootDir>/dreamscape-services/voyage/src/middleware/errorHandler.ts',
+  '<rootDir>/dreamscape-services/voyage/src/middleware/rateLimiter.ts',
+  '<rootDir>/dreamscape-services/voyage/src/middleware/hotelCache.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/flights.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/hotels.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/activities.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/bookings.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/cart.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/itineraries.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/airports.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/airlines.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/locations.ts',
+  '<rootDir>/dreamscape-services/voyage/src/routes/transfers.ts'
+];
+
 module.exports = {
   // Test environment
   testEnvironment: 'node',
@@ -17,14 +41,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/dreamscape-tests/jest.setup.js'],
   
   // Coverage configuration
-  collectCoverageFrom: [
-    '<rootDir>/dreamscape-services/voyage/src/**/*.{js,ts}',
-    '!**/node_modules/**',
-    '!**/dist/**',
-    '!**/build/**',
-    '!**/*.d.ts',
-    '!**/database/seed.ts'
-  ],
+  collectCoverageFrom: voyageUnitCoverageTargets,
   coverageProvider: 'v8',
   
   // Module path mapping

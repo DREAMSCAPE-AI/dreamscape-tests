@@ -220,6 +220,19 @@ describe('ItineraryExportService — US-TEST-013', () => {
         ])
       );
     });
+
+    it('should set description to undefined when item has no description (covers line 160 false branch)', () => {
+      mockCreateEvents.mockReturnValue({ error: null, value: 'BEGIN:VCALENDAR\nEND:VCALENDAR' });
+
+      const itemNoDesc = { ...mockItem, description: undefined };
+      service.generateICal({ ...mockItinerary, items: [itemNoDesc] });
+
+      expect(mockCreateEvents).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ description: undefined }),
+        ])
+      );
+    });
   });
 
   // ── sendEmailSummary ───────────────────────────────────────────────────────
@@ -242,6 +255,56 @@ describe('ItineraryExportService — US-TEST-013', () => {
           'Alice'
         )
       ).resolves.toBeUndefined();
+    });
+
+    it('should sort items chronologically in the email template (covers line 214 sort branch)', async () => {
+      // Items provided in reverse chronological order to exercise the sort comparator
+      const laterItem  = { ...mockItem, id: 'item-later',  startDate: new Date('2026-06-05T10:00:00Z'), order: 1 };
+      const earlierItem = { ...mockHotelItem, id: 'item-earlier', startDate: new Date('2026-06-01T10:00:00Z'), order: 0 };
+
+      await expect(
+        service.sendEmailSummary(
+          { ...mockItinerary, items: [laterItem, earlierItem] },
+          'alice@test.com',
+          'Alice'
+        )
+      ).resolves.toBeUndefined();
+    });
+
+    it('should handle item with no description (covers line 275 false branch)', async () => {
+      const itemNoDesc = { ...mockItem, description: undefined };
+      await expect(
+        service.sendEmailSummary(
+          { ...mockItinerary, items: [itemNoDesc] },
+          'alice@test.com',
+          'Alice'
+        )
+      ).resolves.toBeUndefined();
+    });
+
+    it('should handle empty destinations array (covers line 261 false branch)', async () => {
+      await expect(
+        service.sendEmailSummary(
+          { ...mockItinerary, destinations: [], items: [mockItem] },
+          'alice@test.com',
+          'Alice'
+        )
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  // ── getItemTypeColor (via generatePDF) ────────────────────────────────────
+  describe('generatePDF — item type colors', () => {
+    it('should handle ACTIVITY type item (covers lines 347-348)', async () => {
+      const activityItem = { ...mockItem, type: 'ACTIVITY', title: 'Eiffel Tower Tour' };
+      await service.generatePDF({ ...mockItinerary, items: [activityItem] });
+      expect(mockOutput).toHaveBeenCalled();
+    });
+
+    it('should handle unknown item type with default color (covers lines 349-350)', async () => {
+      const unknownItem = { ...mockItem, type: 'TRANSFER', title: 'Airport Transfer' };
+      await service.generatePDF({ ...mockItinerary, items: [unknownItem] });
+      expect(mockOutput).toHaveBeenCalled();
     });
   });
 });

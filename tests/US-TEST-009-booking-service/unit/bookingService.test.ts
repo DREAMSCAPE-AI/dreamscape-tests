@@ -156,6 +156,38 @@ describe('BookingService — US-TEST-009', () => {
       });
     });
 
+    it('should determine type HOTEL when cart has a single HOTEL item', async () => {
+      const hotelCart = {
+        ...mockCart,
+        items: [{ type: 'HOTEL', itemId: 'hotel-001', itemData: {}, quantity: 1, price: 200, currency: 'EUR' }],
+      };
+      mockGetCart.mockResolvedValue(hotelCart as never);
+      mockBookingCreate.mockResolvedValue({ ...mockBookingDraft, type: 'HOTEL' } as never);
+      mockPublishBookingCreated.mockResolvedValue(undefined as never);
+
+      await service.createBookingFromCart({ userId: USER_ID, paymentIntentId: PAYMENT_ID });
+
+      expect(mockBookingCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: 'HOTEL' }),
+      });
+    });
+
+    it('should determine type ACTIVITY when cart has a single ACTIVITY item', async () => {
+      const activityCart = {
+        ...mockCart,
+        items: [{ type: 'ACTIVITY', itemId: 'act-001', itemData: {}, quantity: 1, price: 80, currency: 'EUR' }],
+      };
+      mockGetCart.mockResolvedValue(activityCart as never);
+      mockBookingCreate.mockResolvedValue({ ...mockBookingDraft, type: 'ACTIVITY' } as never);
+      mockPublishBookingCreated.mockResolvedValue(undefined as never);
+
+      await service.createBookingFromCart({ userId: USER_ID, paymentIntentId: PAYMENT_ID });
+
+      expect(mockBookingCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: 'ACTIVITY' }),
+      });
+    });
+
     it('should throw when cart is empty', async () => {
       mockGetCart.mockResolvedValue({ ...mockCart, items: [] } as never);
 
@@ -230,6 +262,21 @@ describe('BookingService — US-TEST-009', () => {
       );
       expect(mockClearCart).toHaveBeenCalledWith(USER_ID);
       expect(result).toEqual(mockBookingConfirmed);
+    });
+
+    it('should use fallback values when paymentIntentId and confirmedAt are null', async () => {
+      mockBookingFindUniq.mockResolvedValue(mockBookingDraft as never);
+      const confirmedNullFields = { ...mockBookingConfirmed, paymentIntentId: null, confirmedAt: null };
+      mockBookingUpdate.mockResolvedValue(confirmedNullFields as never);
+      mockPublishBookingConfirmed.mockResolvedValue(undefined as never);
+      mockClearCart.mockResolvedValue(undefined as never);
+
+      const result = await service.confirmBooking(REFERENCE, USER_ID);
+
+      expect(mockPublishBookingConfirmed).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentId: '' })
+      );
+      expect(result.status).toBe('CONFIRMED');
     });
 
     it('should confirm a PENDING_PAYMENT booking', async () => {
@@ -463,6 +510,12 @@ describe('BookingService — US-TEST-009', () => {
 
       const result = await service.getUserBookings(USER_ID);
       expect(result).toEqual([]);
+    });
+
+    it('should propagate prisma errors', async () => {
+      mockBookingFindMany.mockRejectedValue(new Error('DB connection lost') as never);
+
+      await expect(service.getUserBookings(USER_ID)).rejects.toThrow('DB connection lost');
     });
   });
 

@@ -71,6 +71,26 @@ describe('Transfers Routes — US-TEST-012', () => {
 
       expect(res.status).toBeGreaterThanOrEqual(400);
     });
+
+    it('should return Unknown error when search throws non-Error', async () => {
+      mockSearchTransfers.mockRejectedValue('plain error' as never);
+
+      const res = await request(app)
+        .get('/transfers/search')
+        .query({ startLocationCode: 'CDG', startDateTime: '2026-06-01T08:00:00', passengers: '1' });
+
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('Unknown error');
+    });
+
+    it('should return 400 when required params are missing', async () => {
+      const res = await request(app)
+        .get('/transfers/search')
+        .query({ startLocationCode: 'CDG' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Missing required parameters: startDateTime, passengers');
+    });
   });
 
   describe('POST /transfers/bookings', () => {
@@ -88,6 +108,57 @@ describe('Transfers Routes — US-TEST-012', () => {
         });
 
       expect(res.status).toBe(200);
+    });
+
+    it('should return 500 when booking creation throws', async () => {
+      mockCreateTransferBooking.mockRejectedValue(new Error('Booking failed') as never);
+
+      const res = await request(app)
+        .post('/transfers/bookings')
+        .send({ data: { transferType: 'PRIVATE' } });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Failed to create transfer booking');
+    });
+
+    it('should return Unknown error when booking throws non-Error', async () => {
+      mockCreateTransferBooking.mockRejectedValue('plain error' as never);
+
+      const res = await request(app)
+        .post('/transfers/bookings')
+        .send({ data: { transferType: 'PRIVATE' } });
+
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('Unknown error');
+    });
+  });
+
+  describe('GET /transfers/orders/:orderId', () => {
+    it('should return 200 when transfer order is found', async () => {
+      mockGetTransferOrder.mockResolvedValue({ data: { id: 'order-001' } } as never);
+
+      const res = await request(app).get('/transfers/orders/order-001');
+
+      expect(res.status).toBe(200);
+      expect(mockGetTransferOrder).toHaveBeenCalledWith('order-001');
+    });
+
+    it('should return 500 when transfer order retrieval throws', async () => {
+      mockGetTransferOrder.mockRejectedValue(new Error('Order unavailable') as never);
+
+      const res = await request(app).get('/transfers/orders/order-001');
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Failed to retrieve transfer order');
+    });
+
+    it('should return Unknown error when order retrieval throws non-Error', async () => {
+      mockGetTransferOrder.mockRejectedValue('plain error' as never);
+
+      const res = await request(app).get('/transfers/orders/order-001');
+
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('Unknown error');
     });
   });
 });

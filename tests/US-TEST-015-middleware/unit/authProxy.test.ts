@@ -122,6 +122,33 @@ describe('authProxy — US-TEST-015', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('should return 503 when auth-service times out (TIMEOUT code — covers line 56 right branch)', async () => {
+      const err: any = new Error('Timeout');
+      err.isAxiosError = true;
+      err.code         = 'TIMEOUT';
+      err.response     = undefined;
+      mockAxiosPost.mockRejectedValue(err as never);
+
+      const { req, res, next } = buildReqResMock('Bearer some-token');
+
+      await authenticateToken(req, res, next);
+
+      expect(res._status).toBe(503);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 when a non-Axios error occurs (covers lines 64-70)', async () => {
+      mockAxiosPost.mockRejectedValue(new Error('Network timeout') as never);
+      mockIsAxiosError.mockReturnValue(false);
+
+      const { req, res, next } = buildReqResMock('Bearer some-token');
+      await authenticateToken(req, res, next);
+
+      expect(res._status).toBe(500);
+      expect(res._body).toMatchObject({ success: false, message: 'Authentication error' });
+      expect(next).not.toHaveBeenCalled();
+    });
+
     it('should call auth-service with Bearer token', async () => {
       mockAxiosPost.mockResolvedValue({
         data: { success: true, data: { user: mockUser } },

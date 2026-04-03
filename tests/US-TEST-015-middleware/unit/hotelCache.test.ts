@@ -9,13 +9,15 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 const mockRedisGet     = jest.fn();
 const mockRedisSet     = jest.fn();
 const mockRedisIsReady = jest.fn();
+const mockRedisGetClient = jest.fn();
 
 jest.mock('@/config/redis', () => ({
   __esModule: true,
   default: {
-    get:     mockRedisGet,
-    set:     mockRedisSet,
-    isReady: mockRedisIsReady,
+    get:       mockRedisGet,
+    set:       mockRedisSet,
+    isReady:   mockRedisIsReady,
+    getClient: mockRedisGetClient,
   },
 }));
 
@@ -24,6 +26,7 @@ import {
   hotelSearchCache,
   hotelDetailsCache,
   hotelListCache,
+  HotelCacheInvalidator,
 } from '@/middleware/hotelCache';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -221,6 +224,129 @@ describe('hotelCache — US-TEST-015', () => {
       await hotelListCache(req, res, next);
 
       expect(next).toHaveBeenCalled();
+    });
+
+    it('should call next() gracefully when Redis.get throws in hotelListCache (covers lines 214-216)', async () => {
+      mockRedisGet.mockRejectedValue(new Error('Redis connection lost') as never);
+      const { req, res, next } = buildMocks({ page: '1' });
+
+      await hotelListCache(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  // ── hotelSearchCache — long param hash branch ──────────────────────────────
+  describe('hotelSearchCache — long query params (MD5 hash branch)', () => {
+    it('should call next() and use MD5 hash key when query param serialization exceeds 100 chars (covers lines 33-35)', async () => {
+      mockRedisGet.mockResolvedValue(null as never);
+      // Create a query with a value > 100 chars to trigger MD5 hash path
+      const longQuery = { cityCode: 'A'.repeat(110) };
+      const { req, res, next } = buildMocks(longQuery);
+
+      await hotelSearchCache(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      // Redis.get should have been called with an MD5 hash key
+      expect(mockRedisGet).toHaveBeenCalledWith(
+        expect.stringMatching(/voyage:hotel:search:[a-f0-9]{32}/)
+      );
+    });
+  });
+
+  // ── hotelDetailsCache — error branch ────────────────────────────────────────
+  describe('hotelDetailsCache — error handling', () => {
+    it('should call next() gracefully when Redis.get throws (covers lines 159-161)', async () => {
+      mockRedisGet.mockRejectedValue(new Error('Redis timeout') as never);
+      const { req, res, next } = buildMocks({}, { hotelId: 'H-999' });
+
+      await hotelDetailsCache(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  // ── HotelCacheInvalidator ──────────────────────────────────────────────────
+  describe('HotelCacheInvalidator', () => {
+    const mockKeys = jest.fn();
+    const mockDel  = jest.fn();
+    const mockClient = { keys: mockKeys, del: mockDel };
+
+    beforeEach(() => {
+      mockKeys.mockReset();
+      mockDel.mockReset();
+    });
+
+    describe('invalidateSearch', () => {
+      it('should return 0 when getClient() returns null (covers line 226)', async () => {
+        mockRedisGetClient.mockReturnValue(null);
+
+        const result = await HotelCacheInvalidator.invalidateSearch();
+        expect(result).toBe(0);
+      });
+
+      it('should delete search keys and return count (covers lines 227-237)', async () => {
+        mockRedisGetClient.mockReturnValue(mockClient);
+        mockKeys.mockResolvedValue(['voyage:hotel:search:abc', 'voyage:hotel:search:def'] as never);
+        mockDel.mockResolvedValue(2 as never);
+
+        const result = await HotelCacheInvalidator.invalidateSearch();
+        expect(result).toBe(2);
+        expect(mockDel).toHaveBeenCalledWith(['voyage:hotel:search:abc', 'voyage:hotel:search:def']);
+      });
+
+      it('should return 0 when no search keys found', async () => {
+        mockRedisGetClient.mockReturnValue(mockClient);
+        mockKeys.mockResolvedValue([] as never);
+
+        const result = await HotelCacheInvalidator.invalidateSearch();
+        expect(result).toBe(0);
+        expect(mockDel).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('invalidateAll', () => {
+      it('should return 0 when getClient() returns null (covers line 243)', async () => {
+        mockRedisGetClient.mockReturnValue(null);
+
+        const result = await HotelCacheInvalidator.invalidateAll();
+        expect(result).toBe(0);
+      });
+
+      it('should delete all hotel cache keys and return count (covers lines 244-254)', async () => {
+        mockRedisGetClient.mockReturnValue(mockClient);
+        mockKeys.mockResolvedValue(['voyage:hotel:search:x', 'voyage:hotel:details:y'] as never);
+        mockDel.mockResolvedValue(2 as never);
+
+        const result = await HotelCacheInvalidator.invalidateAll();
+        expect(result).toBe(2);
+      });
+
+      it('should return 0 when no keys found', async () => {
+        mockRedisGetClient.mockReturnValue(mockClient);
+        mockKeys.mockResolvedValue([] as never);
+
+        const result = await HotelCacheInvalidator.invalidateAll();
+        expect(result).toBe(0);
+      });
+
+      it('should return 0 when client.keys throws (covers lines 252-254)', async () => {
+        mockRedisGetClient.mockReturnValue(mockClient);
+        mockKeys.mockRejectedValue(new Error('Redis scan error') as never);
+
+        const result = await HotelCacheInvalidator.invalidateAll();
+        expect(result).toBe(0);
+      });
+    });
+
+    describe('invalidateSearch — error handling', () => {
+      it('should return 0 when client.keys throws (covers lines 235-237)', async () => {
+        mockRedisGetClient.mockReturnValue(mockClient);
+        mockKeys.mockRejectedValue(new Error('Redis scan error') as never);
+
+        const result = await HotelCacheInvalidator.invalidateSearch();
+        expect(result).toBe(0);
+      });
     });
   });
 });

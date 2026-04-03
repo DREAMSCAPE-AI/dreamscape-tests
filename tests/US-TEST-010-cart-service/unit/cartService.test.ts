@@ -230,6 +230,36 @@ describe('CartService — US-TEST-010', () => {
       expect(mockCartItemCreate).not.toHaveBeenCalled();
       expect(result).toEqual(mockCachedCart);
     });
+
+    it('should propagate error when DB operation fails (covers addToCart catch block)', async () => {
+      mockRedisGet.mockResolvedValue(JSON.stringify(mockEmptyCart) as never);
+      mockCartItemCreate.mockRejectedValue(new Error('DB write failed') as never);
+
+      await expect(service.addToCart(addFlightPayload)).rejects.toThrow('DB write failed');
+    });
+
+    it('should throw "Cart not found" when recalculateTotalPrice gets null (covers lines 268-269)', async () => {
+      mockRedisGet.mockResolvedValue(JSON.stringify(mockEmptyCart) as never);
+      mockCartItemCreate.mockResolvedValue({} as never);
+      // First findUnique (refresh after create) succeeds; second (recalculateTotalPrice) returns null → throws
+      mockCartFindUnique
+        .mockResolvedValueOnce({ ...mockCart, items: [mockCartItem] } as never)
+        .mockResolvedValueOnce(null as never);
+
+      await expect(service.addToCart(addFlightPayload)).rejects.toThrow('Cart not found');
+    });
+
+    it('should not throw when cacheCart fails (best-effort Redis, covers lines 295-297)', async () => {
+      mockRedisGet.mockResolvedValue(JSON.stringify(mockEmptyCart) as never);
+      mockCartItemCreate.mockResolvedValue({} as never);
+      mockCartFindUnique.mockResolvedValue({ ...mockCart, items: [mockCartItem] } as never);
+      mockCartUpdate.mockResolvedValue(mockCart as never);
+      // Redis.set throws → cacheCart catches internally, addToCart still returns
+      mockRedisSet.mockRejectedValue(new Error('Redis unavailable') as never);
+
+      const result = await service.addToCart(addFlightPayload);
+      expect(result).toBeDefined();
+    });
   });
 
   // ── removeCartItem ────────────────────────────────────────────────────────
@@ -324,6 +354,13 @@ describe('CartService — US-TEST-010', () => {
       await expect(service.clearCart(USER_ID)).resolves.toBeUndefined();
       expect(mockCartDelete).not.toHaveBeenCalled();
     });
+
+    it('should propagate error when DB delete fails (covers clearCart catch block)', async () => {
+      mockRedisGet.mockResolvedValue(JSON.stringify(mockCart) as never);
+      mockCartDelete.mockRejectedValue(new Error('DB delete failed') as never);
+
+      await expect(service.clearCart(USER_ID)).rejects.toThrow('DB delete failed');
+    });
   });
 
   // ── cleanupExpiredCarts ───────────────────────────────────────────────────
@@ -344,6 +381,12 @@ describe('CartService — US-TEST-010', () => {
 
       const count = await service.cleanupExpiredCarts();
       expect(count).toBe(0);
+    });
+
+    it('should propagate error when DB deleteMany fails (covers cleanupExpiredCarts catch block)', async () => {
+      mockCartDeleteMany.mockRejectedValue(new Error('DB cleanup failed') as never);
+
+      await expect(service.cleanupExpiredCarts()).rejects.toThrow('DB cleanup failed');
     });
   });
 
@@ -371,6 +414,13 @@ describe('CartService — US-TEST-010', () => {
 
       const result = await service.extendCartExpiry(USER_ID);
       expect(result).toBeNull();
+    });
+
+    it('should propagate error when DB update fails (covers extendCartExpiry catch block)', async () => {
+      mockRedisGet.mockResolvedValue(JSON.stringify(mockCart) as never);
+      mockCartUpdate.mockRejectedValue(new Error('DB update failed') as never);
+
+      await expect(service.extendCartExpiry(USER_ID)).rejects.toThrow('DB update failed');
     });
   });
 });

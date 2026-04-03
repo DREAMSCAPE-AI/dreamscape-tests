@@ -65,5 +65,60 @@ describe('Airlines Routes — US-TEST-012', () => {
 
       expect(res.status).toBeGreaterThanOrEqual(400);
     });
+
+    it('should return Unknown error when lookup throws non-Error', async () => {
+      mockLookupAirlineCode.mockRejectedValue('plain error' as never);
+
+      const res = await request(app)
+        .get('/airlines/lookup')
+        .query({ airlineCodes: 'AF' });
+
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('Unknown error');
+    });
+  });
+
+  describe('GET /airlines/routes', () => {
+    it('should return 200 with airline routes', async () => {
+      mockGetAirlineRoutes.mockResolvedValue({ data: [{ type: 'flight-destination' }] } as never);
+
+      const res = await request(app)
+        .get('/airlines/routes')
+        .query({ airlineCode: 'AF', max: '5' });
+
+      expect(res.status).toBe(200);
+      expect(mockGetAirlineRoutes).toHaveBeenCalledWith({
+        airlineCode: 'AF',
+        max: 5,
+      });
+    });
+
+    it('should return 400 when airlineCode is missing', async () => {
+      const res = await request(app).get('/airlines/routes');
+
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 500 when routes lookup throws', async () => {
+      mockGetAirlineRoutes.mockRejectedValue(new Error('Routes unavailable') as never);
+
+      const res = await request(app)
+        .get('/airlines/routes')
+        .query({ airlineCode: 'AF' });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Failed to get airline routes');
+    });
+
+    it('should return Unknown error when routes throws non-Error', async () => {
+      mockGetAirlineRoutes.mockRejectedValue('plain error' as never);
+
+      const res = await request(app)
+        .get('/airlines/routes')
+        .query({ airlineCode: 'AF' });
+
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('Unknown error');
+    });
   });
 });

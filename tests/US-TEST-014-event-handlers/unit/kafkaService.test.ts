@@ -243,6 +243,137 @@ describe('KafkaService (voyageKafkaService singleton) — US-TEST-014', () => {
     });
   });
 
+  // ── publishSearchPerformed ───────────────────────────────────────────────
+  describe('publishSearchPerformed', () => {
+    const searchPayload = {
+      searchId:    'search-001',
+      userId:      'user-001',
+      searchType:  'FLIGHT' as any,
+      searchParams: { origin: 'CDG', destination: 'LHR' },
+      timestamp:   new Date().toISOString(),
+    };
+
+    it('should publish to VOYAGE_SEARCH_PERFORMED topic', async () => {
+      await voyageKafkaService.initialize();
+      await voyageKafkaService.publishSearchPerformed(searchPayload);
+
+      expect(mockClientPublish).toHaveBeenCalledWith(
+        'voyage.search.performed',
+        expect.any(Object),
+        searchPayload.searchId
+      );
+    });
+
+    it('should skip when client is not initialized', async () => {
+      await expect(
+        voyageKafkaService.publishSearchPerformed(searchPayload)
+      ).resolves.toBeUndefined();
+      expect(mockClientPublish).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── publishBookingUpdated ────────────────────────────────────────────────
+  describe('publishBookingUpdated', () => {
+    const updatedPayload = {
+      bookingId:  'BOOK-001',
+      userId:     'user-001',
+      status:     'CONFIRMED' as any,
+      updatedAt:  new Date().toISOString(),
+    };
+
+    it('should publish to VOYAGE_BOOKING_UPDATED topic', async () => {
+      await voyageKafkaService.initialize();
+      await voyageKafkaService.publishBookingUpdated(updatedPayload);
+
+      expect(mockClientPublish).toHaveBeenCalledWith(
+        'voyage.booking.updated',
+        expect.any(Object),
+        updatedPayload.bookingId
+      );
+    });
+
+    it('should skip when client is not initialized', async () => {
+      await expect(
+        voyageKafkaService.publishBookingUpdated(updatedPayload)
+      ).resolves.toBeUndefined();
+      expect(mockClientPublish).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── publishFlightSelected ────────────────────────────────────────────────
+  describe('publishFlightSelected', () => {
+    const flightPayload = {
+      userId:      'user-001',
+      flightId:    'flight-001',
+      offerId:     'offer-001',
+      selectedAt:  new Date().toISOString(),
+    };
+
+    it('should publish to VOYAGE_FLIGHT_SELECTED topic', async () => {
+      await voyageKafkaService.initialize();
+      await voyageKafkaService.publishFlightSelected(flightPayload as any);
+
+      expect(mockClientPublish).toHaveBeenCalledWith(
+        'voyage.flight.selected',
+        expect.any(Object),
+        flightPayload.userId
+      );
+    });
+
+    it('should skip when client is not initialized', async () => {
+      await expect(
+        voyageKafkaService.publishFlightSelected(flightPayload as any)
+      ).resolves.toBeUndefined();
+      expect(mockClientPublish).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── publishHotelSelected ─────────────────────────────────────────────────
+  describe('publishHotelSelected', () => {
+    const hotelPayload = {
+      userId:      'user-001',
+      hotelId:     'hotel-001',
+      offerId:     'offer-001',
+      selectedAt:  new Date().toISOString(),
+    };
+
+    it('should publish to VOYAGE_HOTEL_SELECTED topic', async () => {
+      await voyageKafkaService.initialize();
+      await voyageKafkaService.publishHotelSelected(hotelPayload as any);
+
+      expect(mockClientPublish).toHaveBeenCalledWith(
+        'voyage.hotel.selected',
+        expect.any(Object),
+        hotelPayload.userId
+      );
+    });
+
+    it('should skip when client is not initialized', async () => {
+      await expect(
+        voyageKafkaService.publishHotelSelected(hotelPayload as any)
+      ).resolves.toBeUndefined();
+      expect(mockClientPublish).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── subscribeToEvents — onUserCreated branch ─────────────────────────────
+  describe('subscribeToEvents — onUserCreated', () => {
+    it('should include USER_CREATED topic when onUserCreated handler is provided', async () => {
+      await voyageKafkaService.initialize();
+
+      const onUserCreated = jest.fn();
+
+      await voyageKafkaService.subscribeToEvents({ onUserCreated });
+
+      expect(mockClientSubscribe).toHaveBeenCalledWith(
+        'voyage-service-group',
+        expect.arrayContaining([
+          expect.objectContaining({ topic: 'user.created', handler: onUserCreated }),
+        ])
+      );
+    });
+  });
+
   // ── healthCheck ──────────────────────────────────────────────────────────
   describe('healthCheck', () => {
     it('should return healthy:true when client is connected', async () => {

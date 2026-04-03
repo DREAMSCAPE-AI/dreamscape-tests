@@ -73,6 +73,16 @@ describe('Activities Routes — US-TEST-012', () => {
 
       expect(res.status).toBeGreaterThanOrEqual(400);
     });
+
+    it('should support bounding box search without latitude/longitude', async () => {
+      mockSearchActivities.mockResolvedValue({ data: [], meta: {} } as never);
+
+      const res = await request(app)
+        .get('/activities/search')
+        .query({ north: '48.9', west: '2.2', south: '48.8', east: '2.4' });
+
+      expect(res.status).toBe(200);
+    });
   });
 
   describe('GET /activities/:id', () => {
@@ -83,11 +93,50 @@ describe('Activities Routes — US-TEST-012', () => {
       expect([200, 400, 404]).toContain(res.status);
     });
 
+    it('should return 404 when activity data is null', async () => {
+      mockGetActivityById.mockResolvedValue({ data: null } as never);
+
+      const res = await request(app).get('/activities/ghost-id');
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Activity not found');
+    });
+
     it('should return error when activity not found', async () => {
       mockGetActivityById.mockRejectedValue(new Error('Activity not found') as never);
 
       const res = await request(app).get('/activities/ghost-id');
       expect(res.status).toBeGreaterThanOrEqual(400);
+    });
+
+    it('should return 500 with Unknown error when non-Error is thrown', async () => {
+      mockGetActivityById.mockRejectedValue('plain string error' as never);
+
+      const res = await request(app).get('/activities/act-001');
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('Unknown error');
+    });
+  });
+
+  describe('GET /activities/details/:activityId', () => {
+    it('should return 200 for details endpoint', async () => {
+      mockGetActivityById.mockResolvedValue({ data: { id: 'act-001', name: 'Eiffel Tower' } } as never);
+
+      const res = await request(app).get('/activities/details/act-001');
+      expect(res.status).toBe(200);
+    });
+
+    it('should return 404 when details endpoint has no data', async () => {
+      mockGetActivityById.mockResolvedValue({ data: null } as never);
+
+      const res = await request(app).get('/activities/details/ghost');
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 500 when details lookup throws', async () => {
+      mockGetActivityById.mockRejectedValue(new Error('boom') as never);
+
+      const res = await request(app).get('/activities/details/ghost');
+      expect(res.status).toBe(500);
     });
   });
 });

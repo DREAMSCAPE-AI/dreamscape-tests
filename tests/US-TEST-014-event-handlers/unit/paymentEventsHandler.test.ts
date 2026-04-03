@@ -200,6 +200,21 @@ describe('paymentEventsHandler — US-TEST-014', () => {
       );
     });
 
+    it('should use fallback message when both errorCode and errorMessage are missing (covers line 76 branch)', async () => {
+      mockFailBooking.mockResolvedValue(mockFailedBooking as never);
+      mockPublishBookingCancelled.mockResolvedValue(undefined as never);
+
+      await handlePaymentFailed(
+        makePaymentFailedEvent({ errorCode: undefined, errorMessage: undefined }) as any
+      );
+
+      expect(mockFailBooking).toHaveBeenCalledWith(
+        BOOKING_ID,
+        USER_ID,
+        expect.stringMatching(/UNKNOWN.*Payment processing failed/)
+      );
+    });
+
     it('should not throw when publishBookingCancelled fails (best-effort)', async () => {
       mockFailBooking.mockResolvedValue(mockFailedBooking as never);
       mockPublishBookingCancelled.mockRejectedValue(new Error('Kafka down') as never);
@@ -226,6 +241,70 @@ describe('paymentEventsHandler — US-TEST-014', () => {
       await handlePaymentFailed(makePaymentFailedEvent() as any);
 
       expect(mockConfirmBooking).not.toHaveBeenCalled();
+    });
+
+    it('should not throw when publishBookingCancelled fails and metadata is absent (covers branch 90)', async () => {
+      mockFailBooking.mockResolvedValue(mockFailedBooking as never);
+      mockPublishBookingCancelled.mockResolvedValue(undefined as never);
+
+      // Event with no metadata — covers the ?. branch on event.metadata?.correlationId
+      const event: any = {
+        payload: {
+          paymentId:    PAYMENT_ID,
+          bookingId:    BOOKING_ID,
+          userId:       USER_ID,
+          errorCode:    'CARD_DECLINED',
+          errorMessage: 'Declined',
+          failedAt:     new Date().toISOString(),
+        },
+        // metadata intentionally omitted
+      };
+
+      await expect(handlePaymentFailed(event)).resolves.toBeUndefined();
+      expect(mockPublishBookingCancelled).toHaveBeenCalledWith(
+        expect.any(Object),
+        undefined
+      );
+    });
+  });
+
+  describe('handlePaymentCompleted — confirmedAt and metadata fallback branches (covers 46-48)', () => {
+    it('should use new Date() when confirmedAt is null on the booking', async () => {
+      const bookingWithoutConfirmedAt = { ...mockConfirmedBooking, confirmedAt: null };
+      mockConfirmBooking.mockResolvedValue(bookingWithoutConfirmedAt as never);
+      mockPublishBookingConfirmed.mockResolvedValue(undefined as never);
+
+      await handlePaymentCompleted(makePaymentCompletedEvent() as any);
+
+      expect(mockPublishBookingConfirmed).toHaveBeenCalledWith(
+        expect.objectContaining({ bookingId: BOOKING_ID }),
+        expect.anything()
+      );
+    });
+
+    it('should pass undefined correlationId when metadata is absent (covers branch 48)', async () => {
+      mockConfirmBooking.mockResolvedValue(mockConfirmedBooking as never);
+      mockPublishBookingConfirmed.mockResolvedValue(undefined as never);
+
+      // Event with no metadata — covers the ?. branch on event.metadata?.correlationId in handlePaymentCompleted
+      const event: any = {
+        payload: {
+          paymentId:   PAYMENT_ID,
+          bookingId:   BOOKING_ID,
+          userId:      USER_ID,
+          amount:      450,
+          currency:    'EUR',
+          completedAt: new Date().toISOString(),
+        },
+        // metadata intentionally omitted
+      };
+
+      await handlePaymentCompleted(event);
+
+      expect(mockPublishBookingConfirmed).toHaveBeenCalledWith(
+        expect.any(Object),
+        undefined
+      );
     });
   });
 });
