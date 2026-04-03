@@ -1,9 +1,17 @@
 node_modules
 package-lock.json
 coverage
+coverage-*/
+coverage-report/
 
 .env
 .env.test
 
 reports
-coverage
+
+# Cypress artifacts
+cypress/screenshots/
+cypress/videos/
+
+# Jest configs generated locally
+jest.config.frontend.js
