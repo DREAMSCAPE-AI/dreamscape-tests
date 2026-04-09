@@ -12,12 +12,14 @@ beforeAll(async () => {
   const userServiceUrl = process.env.USER_SERVICE_URL;
   const authServiceUrl = process.env.AUTH_SERVICE_URL;
 
+  const rateLimitBypassHeaders = { 'x-test-rate-limit': 'true' };
+
   // Wait for base service (if different from user service)
   if (baseServiceUrl && baseServiceUrl !== userServiceUrl) {
     for (let i = 0; i < maxRetries; i++) {
       try {
         console.log('baseServiceUrl', baseServiceUrl);
-        await axios.get(`${baseServiceUrl}/health`, { timeout: 5000 });
+        await axios.get(`${baseServiceUrl}/health`, { timeout: 5000, headers: rateLimitBypassHeaders, validateStatus: s => s < 500 });
         console.log('✅ Base service is ready');
         break;
       } catch (error) {
@@ -35,7 +37,8 @@ beforeAll(async () => {
   for (let i = 0; i < maxRetries; i++) {
     try {
       console.log('userServiceUrl', userServiceUrl);
-      await axios.get(`${userServiceUrl}/health`, { timeout: 5000 });
+      const res = await axios.get(`${userServiceUrl}/health`, { timeout: 5000, headers: rateLimitBypassHeaders, validateStatus: s => s < 500 });
+      // 429 = rate limited but service is running
       console.log('✅ User service is ready');
       break;
     } catch (error) {
@@ -52,7 +55,8 @@ beforeAll(async () => {
   for (let i = 0; i < maxRetries; i++) {
     try {
       console.log('authServiceUrl', authServiceUrl);
-      await axios.get(`${authServiceUrl}/health`, { timeout: 5000 });
+      const res = await axios.get(`${authServiceUrl}/health`, { timeout: 5000, headers: rateLimitBypassHeaders, validateStatus: s => s < 500 });
+      // 429 = rate limited but service is running
       console.log('✅ Auth service is ready');
       break;
     } catch (error) {

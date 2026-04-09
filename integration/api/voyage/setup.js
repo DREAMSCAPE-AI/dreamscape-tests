@@ -13,7 +13,7 @@ beforeAll(async () => {
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      await axios.get(`${voyageServiceUrl}/health`, { timeout: 5000 });
+      await axios.get(`${voyageServiceUrl}/health`, { timeout: 5000, validateStatus: s => s < 500 });
       console.log('✅ Voyage service is ready');
       break;
     } catch (error) {
@@ -28,7 +28,7 @@ beforeAll(async () => {
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      await axios.get(`${authServiceUrl}/health`, { timeout: 5000 });
+      await axios.get(`${authServiceUrl}/health`, { timeout: 5000, validateStatus: s => s < 500 });
       console.log('✅ Auth service is ready');
       break;
     } catch (error) {
