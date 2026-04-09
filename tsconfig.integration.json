@@ -14,7 +14,9 @@
       "allowSyntheticDefaultImports": true,
       "experimentalDecorators": true,
       "emitDecoratorMetadata": true,
-      "moduleResolution": "node"
+      "moduleResolution": "node",
+      "sourceMap": true,
+      "inlineSourceMap": false
     },
     "include": [
       "integration/**/*.ts"
