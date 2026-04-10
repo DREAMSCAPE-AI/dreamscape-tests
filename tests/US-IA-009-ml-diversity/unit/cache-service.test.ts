@@ -31,7 +31,10 @@ import { CacheService } from '@ai/services/CacheService';
 // Helper pour accéder au mock Redis interne
 function getMockRedis() {
   const RedisMock = Redis as jest.MockedClass<typeof Redis>;
-  return RedisMock.mock.results[0]?.value as Record<string, jest.Mock>;
+  return (
+    RedisMock.mock.results[0]?.value ||
+    new (Redis as any)()
+  ) as Record<string, jest.Mock>;
 }
 
 describe('US-IA-009.1 — CacheService', () => {
@@ -39,9 +42,9 @@ describe('US-IA-009.1 — CacheService', () => {
   let mockRedis: Record<string, jest.Mock>;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    service = new CacheService();
     mockRedis = getMockRedis();
+    Object.values(mockRedis).forEach((fn) => fn.mockReset());
+    service = new CacheService();
   });
 
   // ─── TTL Constants ───────────────────────────────────────────────────────────
@@ -162,6 +165,14 @@ describe('US-IA-009.1 — CacheService', () => {
     });
   });
 
+  describe('setUserVector', () => {
+    it('should swallow Redis errors when setting a user vector', async () => {
+      mockRedis.setex.mockRejectedValue(new Error('user vector write failed'));
+
+      await expect(service.setUserVector('user-7', [0.1, 0.2])).resolves.toBeUndefined();
+    });
+  });
+
   // ─── getTrending / setTrending ────────────────────────────────────────────────
 
   describe('getTrending', () => {
@@ -179,6 +190,12 @@ describe('US-IA-009.1 — CacheService', () => {
       mockRedis.get.mockResolvedValue(null);
       expect(await service.getTrending()).toBeNull();
     });
+
+    it('should return null on Redis error', async () => {
+      mockRedis.get.mockRejectedValue(new Error('trending read failed'));
+
+      await expect(service.getTrending()).resolves.toBeNull();
+    });
   });
 
   describe('setTrending', () => {
@@ -194,6 +211,12 @@ describe('US-IA-009.1 — CacheService', () => {
         JSON.stringify(destinations)
       );
     });
+
+    it('should swallow Redis errors when setting trending destinations', async () => {
+      mockRedis.setex.mockRejectedValue(new Error('trend write failed'));
+
+      await expect(service.setTrending([{ city: 'Oslo' }])).resolves.toBeUndefined();
+    });
   });
 
   // ─── Méthodes génériques ──────────────────────────────────────────────────────
@@ -204,12 +227,24 @@ describe('US-IA-009.1 — CacheService', () => {
       expect(await service.get('any:key')).toBe('raw-value');
     });
 
+    it('get should return null on Redis error', async () => {
+      mockRedis.get.mockRejectedValue(new Error('generic get failed'));
+
+      await expect(service.get('any:key')).resolves.toBeNull();
+    });
+
     it('setex should call Redis with provided key, ttl and value', async () => {
       mockRedis.setex.mockResolvedValue('OK');
 
       await service.setex('custom:key', 600, 'my-value');
 
       expect(mockRedis.setex).toHaveBeenCalledWith('custom:key', 600, 'my-value');
+    });
+
+    it('setex should swallow Redis errors', async () => {
+      mockRedis.setex.mockRejectedValue(new Error('generic write failed'));
+
+      await expect(service.setex('custom:key', 600, 'my-value')).resolves.toBeUndefined();
     });
   });
 
@@ -219,6 +254,105 @@ describe('US-IA-009.1 — CacheService', () => {
     it('should return PONG', async () => {
       mockRedis.ping.mockResolvedValue('PONG');
       expect(await service.ping()).toBe('PONG');
+    });
+  });
+
+  describe('additional cache methods', () => {
+    it('should warm up cache with top 50 popular destinations sorted by popularityScore', async () => {
+      mockRedis.setex.mockResolvedValue('OK');
+
+      await service.warmUpCache([
+        { id: 'a', popularityScore: 1 },
+        { id: 'b', popularityScore: 3 },
+        { id: 'c', popularityScore: 2 },
+      ]);
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'cache:popular_destinations',
+        7200,
+        JSON.stringify([
+          { id: 'b', popularityScore: 3 },
+          { id: 'c', popularityScore: 2 },
+          { id: 'a', popularityScore: 1 },
+        ])
+      );
+    });
+
+    it('should swallow warmUpCache errors', async () => {
+      mockRedis.setex.mockRejectedValue(new Error('redis down'));
+
+      await expect(service.warmUpCache([{ popularityScore: 1 }])).resolves.toBeUndefined();
+    });
+
+    it('should warm up cache even when there are no item vectors', async () => {
+      mockRedis.setex.mockResolvedValue('OK');
+
+      await service.warmUpCache([]);
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'cache:popular_destinations',
+        7200,
+        JSON.stringify([])
+      );
+    });
+
+    it('should return cache stats when Redis responds', async () => {
+      mockRedis.info.mockResolvedValue('stats-info');
+      mockRedis.dbsize.mockResolvedValue(12);
+
+      await expect(service.getStats()).resolves.toEqual({
+        totalKeys: 12,
+        info: 'stats-info',
+      });
+    });
+
+    it('should return null when getStats fails', async () => {
+      mockRedis.info.mockRejectedValue(new Error('stats failed'));
+
+      await expect(service.getStats()).resolves.toBeNull();
+    });
+
+    it('should clear all recommendation caches when keys exist', async () => {
+      mockRedis.keys.mockResolvedValue(['recommendations:u1', 'recommendations:u2']);
+      mockRedis.del.mockResolvedValue(2);
+
+      await service.clearAll();
+
+      expect(mockRedis.del).toHaveBeenCalledWith('recommendations:u1', 'recommendations:u2');
+    });
+
+    it('should not call del when clearAll finds no keys', async () => {
+      mockRedis.keys.mockResolvedValue([]);
+
+      await service.clearAll();
+
+      expect(mockRedis.del).not.toHaveBeenCalled();
+    });
+
+    it('should swallow clearAll errors', async () => {
+      mockRedis.keys.mockRejectedValue(new Error('clear failed'));
+
+      await expect(service.clearAll()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('redis bootstrap', () => {
+    it('should configure retryStrategy with capped delay', () => {
+      jest.resetModules();
+
+      let config: any;
+      jest.isolateModules(() => {
+        const RedisModule = require('ioredis');
+        const RedisMock = RedisModule.default || RedisModule;
+        require('@ai/services/CacheService');
+        config = RedisMock.mock.calls.find(
+          (call: any[]) => call[0] && typeof call[0] === 'object' && 'retryStrategy' in call[0]
+        )?.[0];
+      });
+
+      expect(config).toBeDefined();
+      expect(config.retryStrategy(1)).toBe(50);
+      expect(config.retryStrategy(100)).toBe(2000);
     });
   });
 });
