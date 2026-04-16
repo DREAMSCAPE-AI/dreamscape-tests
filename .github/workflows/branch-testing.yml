@@ -528,20 +528,57 @@ jobs:
               'web-client': 'Web Client',
             };
 
+            // Parse coverage-final.json (present in all jest outputs)
+            // Falls back to coverage-summary.json for reporters that generate it (e.g. gateway)
+            function parseFinal(filePath) {
+              const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+              const acc = { s:[0,0], b:[0,0], f:[0,0], l:[0,0] };
+              for (const fd of Object.values(raw)) {
+                // statements
+                for (const v of Object.values(fd.s||{})) { acc.s[1]++; if(v>0) acc.s[0]++; }
+                // branches (each entry is an array of hit counts)
+                for (const arr of Object.values(fd.b||{})) { for(const v of arr){ acc.b[1]++; if(v>0) acc.b[0]++; } }
+                // functions
+                for (const v of Object.values(fd.f||{})) { acc.f[1]++; if(v>0) acc.f[0]++; }
+                // lines — deduplicate statement start lines
+                const hitByLine = {};
+                for (const [sid, loc] of Object.entries(fd.statementMap||{})) {
+                  const ln = loc?.start?.line; if(!ln) continue;
+                  hitByLine[ln] = (hitByLine[ln]||0) + (fd.s?.[sid]||0);
+                }
+                for (const hits of Object.values(hitByLine)) { acc.l[1]++; if(hits>0) acc.l[0]++; }
+              }
+              return acc;
+            }
+
             const svcs = {};
-            for (const file of findFiles('all-coverage', 'coverage-summary.json')) {
-              let data;
-              try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
-              const total = data.total;
-              if (!total) continue;
+            function accumulate(label, acc) {
+              if (!svcs[label]) svcs[label] = { s:[0,0], b:[0,0], f:[0,0], l:[0,0] };
+              const d = svcs[label];
+              for (const k of ['s','b','f','l']) { d[k][0]+=acc[k][0]; d[k][1]+=acc[k][1]; }
+            }
+
+            // Prefer coverage-final.json (richer, always present); use summary as fallback
+            const seenDirs = new Set();
+            for (const file of findFiles('all-coverage', 'coverage-final.json')) {
               const dir = path.basename(path.dirname(file));
+              seenDirs.add(dir);
+              const label = svcMap[dir] || dir;
+              try { accumulate(label, parseFinal(file)); } catch { continue; }
+            }
+            // summary fallback for any dir not covered above
+            for (const file of findFiles('all-coverage', 'coverage-summary.json')) {
+              const dir = path.basename(path.dirname(file));
+              if (seenDirs.has(dir)) continue;
+              let data; try { data = JSON.parse(fs.readFileSync(file,'utf8')); } catch { continue; }
+              const total = data.total; if (!total) continue;
               const label = svcMap[dir] || dir;
               if (!svcs[label]) svcs[label] = { s:[0,0], b:[0,0], f:[0,0], l:[0,0] };
               const d = svcs[label];
-              d.s[0] += total.statements?.covered||0; d.s[1] += total.statements?.total||0;
-              d.b[0] += total.branches?.covered||0;   d.b[1] += total.branches?.total||0;
-              d.f[0] += total.functions?.covered||0;  d.f[1] += total.functions?.total||0;
-              d.l[0] += total.lines?.covered||0;      d.l[1] += total.lines?.total||0;
+              d.s[0]+=total.statements?.covered||0; d.s[1]+=total.statements?.total||0;
+              d.b[0]+=total.branches?.covered||0;   d.b[1]+=total.branches?.total||0;
+              d.f[0]+=total.functions?.covered||0;  d.f[1]+=total.functions?.total||0;
+              d.l[0]+=total.lines?.covered||0;      d.l[1]+=total.lines?.total||0;
             }
 
             const pct = ([c,t]) => t ? Math.round(c/t*100)+'%' : '—';
