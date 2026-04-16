@@ -301,12 +301,20 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Copy web-client coverage into workspace
+        if: always()
+        run: |
+          if [ -d "../dreamscape-frontend/web-client/coverage" ]; then
+            mkdir -p coverage/web-client
+            cp -r ../dreamscape-frontend/web-client/coverage/. coverage/web-client/
+          fi
+
       - name: Upload web-client coverage artifact for PR comment
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cov-web-client-${{ github.run_id }}
-          path: ../dreamscape-frontend/web-client/coverage/
+          path: coverage/web-client/
           retention-days: 1
 
   integration-tests:
