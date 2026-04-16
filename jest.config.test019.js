@@ -14,6 +14,8 @@ module.exports = {
     '^@dreamscape/db$': '<rootDir>/dreamscape-tests/__mocks__/db.ts',
     '^@dreamscape/kafka$': '<rootDir>/dreamscape-services/shared/kafka/src/index.ts',
     '^@ai/(.*)$': '<rootDir>/dreamscape-services/ai/src/$1',
+    // Canonical axios so jest.mock('axios') in the test intercepts the same instance used by the service
+    '^axios$': '<rootDir>/dreamscape-tests/node_modules/axios',
   },
 
   setupFilesAfterEnv: ['<rootDir>/dreamscape-tests/jest.setup.js'],

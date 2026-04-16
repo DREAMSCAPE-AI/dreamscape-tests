@@ -59,7 +59,8 @@ module.exports = {
     '^@types/(.*)$': '<rootDir>/dreamscape-services/user/src/types/$1',
     '^@types_onboarding$': '<rootDir>/dreamscape-services/user/src/types/onboarding.ts',
     // Canonical resolution so jest.mock('express-rate-limit') intercepts the same module instance
-    '^express-rate-limit$': '<rootDir>/dreamscape-services/user/node_modules/express-rate-limit'
+    // Points to voyage/node_modules because US-TEST-015 is a voyage test (voyage deps installed in CI)
+    '^express-rate-limit$': '<rootDir>/dreamscape-services/voyage/node_modules/express-rate-limit'
   },
 
   // Timeout for tests
