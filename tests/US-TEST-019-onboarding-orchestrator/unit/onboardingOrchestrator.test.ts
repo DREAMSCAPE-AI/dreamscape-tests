@@ -296,29 +296,14 @@ describe('US-TEST-019 — OnboardingOrchestratorService', () => {
 
   describe('private helpers', () => {
     it('should fetch preferences from user service on success', async () => {
-      const server = http.createServer((req, res) => {
-        if (req.url === '/api/v1/users/user-42/ai-preferences') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ data: { isOnboardingCompleted: true, foo: 'bar' } }));
-          return;
-        }
-
-        res.writeHead(404);
-        res.end();
+      getAxiosClient().get = jest.fn().mockResolvedValue({
+        data: { data: { isOnboardingCompleted: true, foo: 'bar' } },
       });
 
-      await new Promise<void>((resolve) => server.listen(3001, resolve));
-
-      try {
-        await expect((service as any).fetchUserPreferences('user-42')).resolves.toEqual({
-          isOnboardingCompleted: true,
-          foo: 'bar',
-        });
-      } finally {
-        await new Promise<void>((resolve, reject) =>
-          server.close((error) => (error ? reject(error) : resolve()))
-        );
-      }
+      await expect((service as any).fetchUserPreferences('user-42')).resolves.toEqual({
+        isOnboardingCompleted: true,
+        foo: 'bar',
+      });
     });
 
     it('should throw normalized error when fetchUserPreferences fails', async () => {

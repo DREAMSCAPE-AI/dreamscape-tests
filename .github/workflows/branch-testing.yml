@@ -138,15 +138,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Auth — DR-538 (AuthService + UserService unit tests)
+          # Auth — DR-538 + TEST-002/003/004 (all need auth/node_modules)
           - component: auth
             service: auth
-            script: test:dr538:coverage
+            script: "test:dr538:coverage && npm run test:test002:coverage && npm run test:test003:coverage && npm run test:test004:coverage"
             coverage_dir: coverage/auth
-          # User — TEST-002, 003, 004
+          # User — profile & user service tests
           - component: user
             service: user
-            script: "test:test002:coverage && npm run test:test003:coverage && npm run test:test004:coverage"
+            script: test:coverage:user
             coverage_dir: coverage/user
           # AI — TEST-016→021 (RecommendationService, MLService, etc.)
           - component: ai
