@@ -20,7 +20,9 @@ jest.mock('@dreamscape/db', () => ({
 
 jest.mock('axios', () => ({
   __esModule: true,
-  default: jest.requireActual('axios').default,
+  // Pure stub — jest.requireActual('axios') fails in Jest CJS mode because axios v1 ships ESM index.js.
+  // getAxiosClient().get is overridden in beforeEach anyway, so the stub shape is sufficient.
+  default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
 }));
 
 jest.mock('@ai/onboarding/onboarding-to-vector.service', () => ({
