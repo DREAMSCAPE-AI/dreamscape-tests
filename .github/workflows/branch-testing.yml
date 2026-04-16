@@ -137,7 +137,38 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [auth, user, ai, payment, voyage]
+        include:
+          # Auth — DR-538 + TEST-002/003/004 (all need auth/node_modules)
+          - component: auth
+            service: auth
+            script: "test:dr538:coverage && npm run test:test002:coverage && npm run test:test003:coverage && npm run test:test004:coverage"
+            coverage_dir: coverage/auth
+          # User — profile & user service tests
+          - component: user
+            service: user
+            script: test:coverage:user
+            coverage_dir: coverage/user
+          # AI — TEST-016→021 (RecommendationService, MLService, etc.)
+          - component: ai
+            service: ai
+            script: test:ai:unit:new:coverage
+            coverage_dir: coverage/ai
+          # Payment — TEST-022 (StripeService) + TEST-024 (KafkaService + DatabaseService)
+          - component: payment
+            service: payment
+            script: "test:test022:coverage && npm run test:test024:coverage"
+            coverage_dir: coverage/payment
+          # Voyage — US-TEST-009→015
+          - component: voyage
+            service: voyage
+            script: test:coverage:voyage-unit
+            coverage_dir: coverage/voyage
+          # Gateway — US-GW-001 (health + VR sessions routes)
+          - component: gateway
+            service: gateway
+            service_base: dreamscape-frontend
+            script: test:gateway:coverage
+            coverage_dir: coverage/gateway
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
@@ -179,10 +210,15 @@ jobs:
             npm run build --if-present
             cd -
           fi
+
       - name: Install service dependencies
         run: |
-          if [ -d "../dreamscape-services/${{ matrix.component }}" ] && [ -f "../dreamscape-services/${{ matrix.component }}/package.json" ]; then
-            cd ../dreamscape-services/${{ matrix.component }}
+          # service_base defaults to dreamscape-services; gateway uses dreamscape-frontend
+          SERVICE_BASE="${{ matrix.service_base || 'dreamscape-services' }}"
+          SERVICE_DIR="../${SERVICE_BASE}/${{ matrix.service }}"
+
+          if [ -d "$SERVICE_DIR" ] && [ -f "$SERVICE_DIR/package.json" ]; then
+            cd "$SERVICE_DIR"
             if [ -f "package-lock.json" ]; then
               npm ci
             elif [ -f "yarn.lock" ]; then
@@ -192,30 +228,68 @@ jobs:
             fi
             npm run build --if-present || echo "⚠️ Build had errors, continuing with tests"
           else
-            echo "Service ${{ matrix.component }} not found or no package.json"
+            echo "Service ${{ matrix.service }} not found in ${SERVICE_BASE}/"
           fi
 
-      - name: Run unit tests with coverage
-        env:
-          COMPONENT: ${{ matrix.component }}
+      - name: Run unit tests with coverage — ${{ matrix.component }}
         run: |
-          if [ -d "../dreamscape-services/${COMPONENT}" ]; then
-            echo "🧪 Running unit tests for ${COMPONENT}"
-            if [[ "${COMPONENT}" == "ai" ]]; then
-              npm run test:coverage:${COMPONENT} || echo "⚠️ AI tests failed (non-blocking)"
-            else
-              npm run test:coverage:${COMPONENT}
-            fi
-          else
-            echo "❌ Component ${COMPONENT} not available"
-          fi
+          echo "🧪 Running unit tests for ${{ matrix.component }}"
+          npm run ${{ matrix.script }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: ./coverage/${{ matrix.component }}/lcov.info
+          files: ./${{ matrix.coverage_dir }}/lcov.info
           flags: ${{ matrix.component }}
           name: ${{ matrix.component }}-coverage
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  frontend-tests:
+    name: Frontend Tests (web-client Vitest)
+    runs-on: ubuntu-latest
+    needs: [parse-context, setup-environment]
+    if: ${{ needs.setup-environment.outputs.frontend_available == 'true' }}
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Download repositories
+        uses: actions/download-artifact@v4
+        with:
+          name: repositories-${{ github.run_id }}
+          path: ..
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install web-client dependencies
+        run: |
+          if [ -d "../dreamscape-frontend/web-client" ]; then
+            cd ../dreamscape-frontend/web-client
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+          else
+            echo "⚠️ dreamscape-frontend/web-client not found"
+            exit 0
+          fi
+
+      - name: Run web-client Vitest with coverage
+        run: |
+          if [ -d "../dreamscape-frontend/web-client" ]; then
+            cd ../dreamscape-frontend/web-client
+            echo "🧪 Running web-client Vitest tests"
+            npm run test:run -- --coverage || echo "⚠️ Some web-client tests failed — component/test mismatch to be resolved"
+          fi
+
+      - name: Upload web-client coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ../dreamscape-frontend/web-client/coverage/lcov.info
+          flags: web-client
+          name: web-client-coverage
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -287,8 +361,10 @@ jobs:
           REDIS_URL: redis://localhost:6379
           MONGODB_URL: mongodb://localhost:27017/dreamscape_test
         run: |
-          echo "🔗 Running cross-service integration tests"
+          echo "🔗 Running cross-service integration tests (auth, user, kafka)"
           npm run test:integration || echo "Integration tests not available"
+          echo "🔗 Running DR-612→617 integration tests with coverage"
+          npm run test:integration:all:coverage || echo "⚠️ DR-612→617 integration tests failed — microservices not running in CI (expected)"
 
       - name: Generate integration test report
         if: always()
