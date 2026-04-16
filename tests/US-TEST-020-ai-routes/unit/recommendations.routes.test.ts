@@ -60,12 +60,45 @@ jest.mock('@ai/recommendations/popularity.service', () => ({
   })),
 }));
 
+// Stable top-level cache mock — used by /segments, /cache/stats
+// The /popular describe overrides this per-test via MockCache.mockImplementation()
+const topLevelCacheMock = {
+  getTopDestinations: jest.fn(),
+  getTopBySegment: jest.fn(),
+  getTopByCategory: jest.fn(),
+  getCacheStats: jest.fn(),
+};
 jest.mock('@ai/recommendations/popularity-cache.service', () => ({
-  PopularityCacheService: jest.fn().mockImplementation(() => ({
-    getTopDestinations: jest.fn(),
-    getTopBySegment: jest.fn(),
-    getTopByCategory: jest.fn(),
-  })),
+  PopularityCacheService: jest.fn().mockImplementation(() => topLevelCacheMock),
+}));
+
+// Mock services used via dynamic import in uncovered routes
+const mockColdStartInstance = { getRecommendationsForNewUser: jest.fn() };
+jest.mock('@ai/recommendations/cold-start.service', () => ({
+  ColdStartService: jest.fn().mockImplementation(() => mockColdStartInstance),
+}));
+
+const mockRefreshJob = { runNow: jest.fn() };
+jest.mock('@ai/jobs/refresh-popularity.job', () => ({
+  refreshPopularityJob: mockRefreshJob,
+}));
+
+const mockActivityInstance = {
+  getRecommendations: jest.fn(),
+  trackInteraction: jest.fn(),
+  getStatus: jest.fn(),
+};
+jest.mock('@ai/activities/services/activity-recommendation.service', () => ({
+  ActivityRecommendationService: jest.fn().mockImplementation(() => mockActivityInstance),
+}));
+
+const mockFlightInstance = {
+  getRecommendations: jest.fn(),
+  trackInteraction: jest.fn(),
+  getStatus: jest.fn(),
+};
+jest.mock('@ai/flights/services/flight-recommendation.service', () => ({
+  FlightRecommendationService: jest.fn().mockImplementation(() => mockFlightInstance),
 }));
 
 // Mock the accommodations sub-router to avoid loading its transitive deps
@@ -94,6 +127,9 @@ beforeEach(() => {
   app = express();
   app.use(express.json());
   app.use('/', recommendationsRouter);
+  // Reset cache to topLevelCacheMock before each test (the /popular describe overrides this
+  // with its own per-test mockCacheInstance in its inner beforeEach)
+  (PopularityCacheService as any).mockImplementation(() => topLevelCacheMock);
 });
 
 // ─── POST /generate ───────────────────────────────────────────────────────────
@@ -617,6 +653,381 @@ describe('GET /popular', () => {
     mockCacheInstance.getTopDestinations.mockRejectedValue(new Error('cache error'));
 
     const res = await request(app).get('/popular');
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ─── GET /cold-start ──────────────────────────────────────────────────────────
+
+describe('GET /cold-start', () => {
+  it('should return 400 when userId is missing', async () => {
+    const res = await request(app).get('/cold-start');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('userId is required');
+  });
+
+  it('should return 200 with cold-start recommendations', async () => {
+    mockColdStartInstance.getRecommendationsForNewUser.mockResolvedValue([
+      { id: 'dest-1', strategy: 'popularity_based' },
+      { id: 'dest-2', strategy: 'popularity_based' },
+    ]);
+
+    const res = await request(app).get('/cold-start').query({ userId: 'new-user' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.userId).toBe('new-user');
+    expect(res.body.count).toBe(2);
+    expect(res.body.recommendations).toHaveLength(2);
+    expect(res.body.strategy).toBe('popularity_based');
+  });
+
+  it('should return 500 on error', async () => {
+    mockColdStartInstance.getRecommendationsForNewUser.mockRejectedValue(new Error('cold-start failed'));
+
+    const res = await request(app).get('/cold-start').query({ userId: 'new-user' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('cold-start failed');
+  });
+});
+
+// ─── GET /segments/:segment/popular ──────────────────────────────────────────
+
+describe('GET /segments/:segment/popular', () => {
+  it('should return cached results when cache hits', async () => {
+    topLevelCacheMock.getTopBySegment.mockResolvedValue([{ id: 'seg-1' }]);
+
+    const res = await request(app).get('/segments/BUDGET_BACKPACKER/popular');
+
+    expect(res.status).toBe(200);
+    expect(res.body.segment).toBe('BUDGET_BACKPACKER');
+    expect(res.body.count).toBe(1);
+  });
+
+  it('should fall back to DB when cache misses', async () => {
+    topLevelCacheMock.getTopBySegment.mockResolvedValue(null);
+    const { PopularityService } = require('@ai/recommendations/popularity.service');
+    PopularityService.mockImplementation(() => ({
+      getTopBySegment: jest.fn().mockResolvedValue([{ id: 'seg-db' }]),
+    }));
+
+    const res = await request(app).get('/segments/LUXURY_TRAVELER/popular');
+
+    expect(res.status).toBe(200);
+  });
+
+  it('should return 500 on error', async () => {
+    topLevelCacheMock.getTopBySegment.mockRejectedValue(new Error('segment error'));
+
+    const res = await request(app).get('/segments/BUDGET_BACKPACKER/popular');
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ─── POST /popularity/refresh ─────────────────────────────────────────────────
+
+describe('POST /popularity/refresh', () => {
+  it('should return 200 with refresh result on success', async () => {
+    mockRefreshJob.runNow.mockResolvedValue({ success: true, updated: 42 });
+
+    const res = await request(app).post('/popularity/refresh');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.result.updated).toBe(42);
+  });
+
+  it('should return 500 on error', async () => {
+    mockRefreshJob.runNow.mockRejectedValue(new Error('refresh failed'));
+
+    const res = await request(app).post('/popularity/refresh');
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('refresh failed');
+  });
+});
+
+// ─── GET /cache/stats ─────────────────────────────────────────────────────────
+
+describe('GET /cache/stats', () => {
+  it('should return cache statistics', async () => {
+    topLevelCacheMock.getCacheStats.mockResolvedValue({ hits: 100, misses: 20, size: 500 });
+
+    const res = await request(app).get('/cache/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.hits).toBe(100);
+  });
+
+  it('should return 500 on error', async () => {
+    topLevelCacheMock.getCacheStats.mockRejectedValue(new Error('stats error'));
+
+    const res = await request(app).get('/cache/stats');
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ─── GET /activities ──────────────────────────────────────────────────────────
+
+describe('GET /activities', () => {
+  it('should return 400 when userId is missing', async () => {
+    const res = await request(app).get('/activities').query({ cityCode: 'PAR' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('userId');
+  });
+
+  it('should return 400 when neither cityCode nor lat/lon provided', async () => {
+    const res = await request(app).get('/activities').query({ userId: 'user-1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('cityCode');
+  });
+
+  it('should return 200 with activity recommendations (cityCode)', async () => {
+    mockActivityInstance.getRecommendations.mockResolvedValue({ recommendations: [{ id: 'act-1' }] });
+
+    const res = await request(app).get('/activities').query({ userId: 'user-1', cityCode: 'PAR' });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('should return 200 with activity recommendations (lat/lon)', async () => {
+    mockActivityInstance.getRecommendations.mockResolvedValue({ recommendations: [] });
+
+    const res = await request(app).get('/activities').query({
+      userId: 'user-1', latitude: '48.8566', longitude: '2.3522',
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('should return 500 on error', async () => {
+    mockActivityInstance.getRecommendations.mockRejectedValue(new Error('activity error'));
+
+    const res = await request(app).get('/activities').query({ userId: 'user-1', cityCode: 'PAR' });
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ─── POST /activities/interactions ───────────────────────────────────────────
+
+describe('POST /activities/interactions', () => {
+  it('should return 400 when required fields missing', async () => {
+    const res = await request(app).post('/activities/interactions').send({ userId: 'user-1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('required');
+  });
+
+  it('should return 400 for invalid interaction type', async () => {
+    const res = await request(app).post('/activities/interactions').send({
+      userId: 'user-1', activityId: 'act-1', type: 'invalid',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Invalid interaction type');
+  });
+
+  it('should return 200 on successful track', async () => {
+    mockActivityInstance.trackInteraction.mockResolvedValue(undefined);
+
+    const res = await request(app).post('/activities/interactions').send({
+      userId: 'user-1', activityId: 'act-1', type: 'book',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.type).toBe('book');
+  });
+
+  it('should return 500 on error', async () => {
+    mockActivityInstance.trackInteraction.mockRejectedValue(new Error('track failed'));
+
+    const res = await request(app).post('/activities/interactions').send({
+      userId: 'user-1', activityId: 'act-1', type: 'view',
+    });
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// NOTE: GET /activities/status is unreachable — shadowed by GET /activities/:location
+// (registered earlier at line 407). The route handler at line 803 is dead code.
+
+// ─── GET /flights ─────────────────────────────────────────────────────────────
+
+describe('GET /flights', () => {
+  const baseQuery = { userId: 'user-1', origin: 'CDG', departureDate: '2024-08-01', adults: '2' };
+
+  it('should return 400 when userId is missing', async () => {
+    const res = await request(app).get('/flights').query({ origin: 'CDG', departureDate: '2024-08-01', adults: '2' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('userId');
+  });
+
+  it('should return 400 when origin is missing', async () => {
+    const res = await request(app).get('/flights').query({ userId: 'user-1', departureDate: '2024-08-01', adults: '2' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('origin');
+  });
+
+  it('should return 400 when departureDate is missing', async () => {
+    const res = await request(app).get('/flights').query({ userId: 'user-1', origin: 'CDG', adults: '2' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should return 400 when adults is missing', async () => {
+    const res = await request(app).get('/flights').query({ userId: 'user-1', origin: 'CDG', departureDate: '2024-08-01' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should return 200 with single destination (legacy mode)', async () => {
+    const result = { recommendations: [{ id: 'fl-1', score: 0.9 }] };
+    mockFlightInstance.getRecommendations.mockResolvedValue(result);
+
+    const res = await request(app).get('/flights').query({ ...baseQuery, destination: 'JFK' });
+
+    expect(res.status).toBe(200);
+    expect(mockFlightInstance.getRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        searchParams: expect.objectContaining({ origin: 'CDG', destination: 'JFK', adults: 2 }),
+      })
+    );
+  });
+
+  it('should return 200 with multiple destinations array', async () => {
+    mockFlightInstance.getRecommendations.mockResolvedValue({ recommendations: [] });
+
+    const res = await request(app).get('/flights').query({ ...baseQuery, 'destinations[]': ['JFK', 'LAX'] });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('should return 200 in auto-suggest mode (no destination)', async () => {
+    mockFlightInstance.getRecommendations.mockResolvedValue({ recommendations: [{ id: 'fl-auto' }] });
+
+    const res = await request(app).get('/flights').query(baseQuery);
+
+    expect(res.status).toBe(200);
+    expect(mockFlightInstance.getRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        searchParams: expect.not.objectContaining({ destination: expect.anything() }),
+      })
+    );
+  });
+
+  it('should pass tripContext when optional context params provided', async () => {
+    mockFlightInstance.getRecommendations.mockResolvedValue({});
+
+    await request(app).get('/flights').query({
+      ...baseQuery,
+      tripPurpose: 'leisure',
+      budgetPerPerson: '500',
+      preferDirectFlights: 'true',
+      avoidRedEye: 'false',
+    });
+
+    expect(mockFlightInstance.getRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tripContext: expect.objectContaining({
+          tripPurpose: 'leisure',
+          budgetPerPerson: 500,
+          preferDirectFlights: true,
+          avoidRedEye: false,
+        }),
+      })
+    );
+  });
+
+  it('should pass filters when filter params provided', async () => {
+    mockFlightInstance.getRecommendations.mockResolvedValue({});
+
+    await request(app).get('/flights').query({
+      ...baseQuery,
+      maxStops: '1',
+      maxPrice: '800',
+      departureTimeEarliest: '06:00',
+      departureTimeLatest: '12:00',
+    });
+
+    expect(mockFlightInstance.getRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: expect.objectContaining({
+          maxStops: 1,
+          maxPrice: 800,
+          departureTimeRange: { earliest: '06:00', latest: '12:00' },
+        }),
+      })
+    );
+  });
+
+  it('should return 500 on error', async () => {
+    mockFlightInstance.getRecommendations.mockRejectedValue(new Error('flight service down'));
+
+    const res = await request(app).get('/flights').query(baseQuery);
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('flight service down');
+  });
+});
+
+// ─── POST /flights/interactions ───────────────────────────────────────────────
+
+describe('POST /flights/interactions', () => {
+  it('should return 400 when required fields missing', async () => {
+    const res = await request(app).post('/flights/interactions').send({ userId: 'user-1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('required');
+  });
+
+  it('should return 400 for invalid interaction type', async () => {
+    const res = await request(app).post('/flights/interactions').send({
+      userId: 'user-1', flightId: 'fl-1', type: 'invalid',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Invalid interaction type');
+  });
+
+  it('should return 200 on successful track', async () => {
+    mockFlightInstance.trackInteraction.mockResolvedValue(undefined);
+
+    const res = await request(app).post('/flights/interactions').send({
+      userId: 'user-1', flightId: 'fl-1', type: 'save',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.flightId).toBe('fl-1');
+  });
+
+  it('should return 500 on error', async () => {
+    mockFlightInstance.trackInteraction.mockRejectedValue(new Error('track failed'));
+
+    const res = await request(app).post('/flights/interactions').send({
+      userId: 'user-1', flightId: 'fl-1', type: 'view',
+    });
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ─── GET /flights/status ──────────────────────────────────────────────────────
+
+describe('GET /flights/status', () => {
+  it('should return service status', async () => {
+    mockFlightInstance.getStatus.mockResolvedValue({ status: 'healthy', flightsIndexed: 5000 });
+
+    const res = await request(app).get('/flights/status');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('healthy');
+  });
+
+  it('should return 500 on error', async () => {
+    mockFlightInstance.getStatus.mockRejectedValue(new Error('status error'));
+
+    const res = await request(app).get('/flights/status');
 
     expect(res.status).toBe(500);
   });
