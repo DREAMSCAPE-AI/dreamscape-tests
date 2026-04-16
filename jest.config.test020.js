@@ -12,6 +12,8 @@ module.exports = {
   moduleNameMapper: {
     '^@dreamscape/db$': '<rootDir>/dreamscape-tests/__mocks__/db.ts',
     '^@dreamscape/kafka$': '<rootDir>/dreamscape-services/shared/kafka/src/index.ts',
+    // AmadeusService doesn't exist in AI service (it's a voyage-side stub) — use test mock
+    '^@/services/AmadeusService$': '<rootDir>/dreamscape-tests/__mocks__/amadeusService.ts',
     // Override @/ to point to AI service (routes use @/ for internal imports)
     '^@/(.*)$': '<rootDir>/dreamscape-services/ai/src/$1',
     '^@ai/(.*)$': '<rootDir>/dreamscape-services/ai/src/$1',

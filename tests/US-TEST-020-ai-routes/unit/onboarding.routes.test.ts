@@ -16,25 +16,22 @@ jest.mock('@dreamscape/db', () => ({
   },
 }));
 
+// Stable mock instance — defined outside factory so clearMocks doesn't lose the reference
+const mockOrchestratorInstance = {
+  processOnboardingComplete: jest.fn(),
+  refineUserProfile: jest.fn(),
+};
+
 jest.mock('@ai/onboarding/onboarding-orchestrator.service', () => ({
-  OnboardingOrchestratorService: jest.fn().mockImplementation(() => ({
-    processOnboardingComplete: jest.fn(),
-    refineUserProfile: jest.fn(),
-  })),
+  OnboardingOrchestratorService: jest.fn().mockImplementation(() => mockOrchestratorInstance),
 }));
 
 import express from 'express';
 import request from 'supertest';
 import { prisma } from '@dreamscape/db';
-import { OnboardingOrchestratorService } from '@ai/onboarding/onboarding-orchestrator.service';
 import onboardingRouter from '@ai/routes/onboarding';
 
 const mockPrismaUserVector = prisma.userVector as jest.Mocked<typeof prisma.userVector>;
-
-function getOrchestratorInstance() {
-  const MockClass = OnboardingOrchestratorService as jest.MockedClass<typeof OnboardingOrchestratorService>;
-  return MockClass.mock.instances[MockClass.mock.instances.length - 1] as any;
-}
 
 let app: express.Application;
 
@@ -55,8 +52,7 @@ describe('POST /onboarding/complete', () => {
   });
 
   it('should return 500 when orchestrator returns success: false', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockResolvedValue({
+    mockOrchestratorInstance.processOnboardingComplete.mockResolvedValue({
       success: false,
       error: 'Onboarding not completed',
       recommendations: [],
@@ -72,8 +68,7 @@ describe('POST /onboarding/complete', () => {
   });
 
   it('should return 200 with vector and recommendations on success', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockResolvedValue({
+    mockOrchestratorInstance.processOnboardingComplete.mockResolvedValue({
       success: true,
       fallback: false,
       userVector: {
@@ -96,8 +91,7 @@ describe('POST /onboarding/complete', () => {
   });
 
   it('should return 500 with message when orchestrator throws an Error', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockRejectedValue(new Error('Orchestrator crashed'));
+    mockOrchestratorInstance.processOnboardingComplete.mockRejectedValue(new Error('Orchestrator crashed'));
 
     const res = await request(app)
       .post('/onboarding/complete')
@@ -108,8 +102,7 @@ describe('POST /onboarding/complete', () => {
   });
 
   it('should return "Unknown error" when orchestrator throws a non-Error', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockRejectedValue('plain string');
+    mockOrchestratorInstance.processOnboardingComplete.mockRejectedValue('plain string');
 
     const res = await request(app)
       .post('/onboarding/complete')
@@ -146,8 +139,7 @@ describe('PATCH /users/:userId/refine', () => {
   });
 
   it('should return 200 with refinement result on success', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.refineUserProfile.mockResolvedValue({
+    mockOrchestratorInstance.refineUserProfile.mockResolvedValue({
       vectorUpdated: true,
       segmentsChanged: false,
       newRecommendationsGenerated: true,
@@ -163,8 +155,7 @@ describe('PATCH /users/:userId/refine', () => {
   });
 
   it('should return 500 with "Unknown error" when refine throws a non-Error', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.refineUserProfile.mockRejectedValue('fail');
+    mockOrchestratorInstance.refineUserProfile.mockRejectedValue('fail');
 
     const res = await request(app).patch('/users/user-1/refine').send({
       interaction: { type: 'book', destinationId: 'dest-1' },
@@ -226,8 +217,7 @@ describe('GET /users/:userId/segment', () => {
 
 describe('POST /users/:userId/regenerate', () => {
   it('should return 200 with regeneration result on success', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockResolvedValue({
+    mockOrchestratorInstance.processOnboardingComplete.mockResolvedValue({
       success: true,
       recommendations: [{ id: 'r1' }, { id: 'r2' }],
       metadata: { strategy: 'hybrid' },
@@ -241,8 +231,7 @@ describe('POST /users/:userId/regenerate', () => {
   });
 
   it('should return 500 with message when processOnboardingComplete throws', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockRejectedValue(new Error('Regen failed'));
+    mockOrchestratorInstance.processOnboardingComplete.mockRejectedValue(new Error('Regen failed'));
 
     const res = await request(app).post('/users/user-2/regenerate');
 
@@ -251,8 +240,7 @@ describe('POST /users/:userId/regenerate', () => {
   });
 
   it('should return "Unknown error" when thrown value is not an Error', async () => {
-    const orchestrator = getOrchestratorInstance();
-    orchestrator.processOnboardingComplete.mockRejectedValue(42);
+    mockOrchestratorInstance.processOnboardingComplete.mockRejectedValue(42);
 
     const res = await request(app).post('/users/user-3/regenerate');
 
