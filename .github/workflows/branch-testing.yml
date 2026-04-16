@@ -245,6 +245,14 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Upload coverage artifact for PR comment
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cov-${{ matrix.component }}-${{ github.run_id }}
+          path: coverage/
+          retention-days: 1
+
   frontend-tests:
     name: Frontend Tests (web-client Vitest)
     runs-on: ubuntu-latest
@@ -292,6 +300,14 @@ jobs:
           name: web-client-coverage
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload web-client coverage artifact for PR comment
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cov-web-client-${{ github.run_id }}
+          path: ../dreamscape-frontend/web-client/coverage/
+          retention-days: 1
 
   integration-tests:
     name: Cross-Service Integration Tests
@@ -459,10 +475,108 @@ jobs:
             npm install
           fi
 
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cov-*-${{ github.run_id }}
+          path: all-coverage
+          merge-multiple: true
+
       - name: Generate coverage report
         run: |
           echo "📊 Generating coverage report for branch ${{ needs.parse-context.outputs.branch }}"
           npm run report:coverage || echo "Coverage report generation failed"
+
+      - name: Post coverage comment to PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            function findFiles(dir, name) {
+              if (!fs.existsSync(dir)) return [];
+              const out = [];
+              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) out.push(...findFiles(p, name));
+                else if (e.name === name) out.push(p);
+              }
+              return out;
+            }
+
+            // Map coverage subdir → service label
+            const svcMap = {
+              auth: 'Auth', test002: 'Auth', test003: 'Auth', test004: 'Auth',
+              user: 'User',
+              test016: 'AI', test017: 'AI', test018: 'AI', test019: 'AI', test020: 'AI',
+              test022: 'Payment', test024: 'Payment',
+              us009: 'Voyage', us010: 'Voyage', us011: 'Voyage', us012: 'Voyage',
+              us013: 'Voyage', us014: 'Voyage', us015: 'Voyage',
+              gateway: 'Gateway',
+              coverage: 'Web Client',
+            };
+
+            const svcs = {};
+            for (const file of findFiles('all-coverage', 'coverage-summary.json')) {
+              let data;
+              try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
+              const total = data.total;
+              if (!total) continue;
+              const dir = path.basename(path.dirname(file));
+              const label = svcMap[dir] || dir;
+              if (!svcs[label]) svcs[label] = { s:[0,0], b:[0,0], f:[0,0], l:[0,0] };
+              const d = svcs[label];
+              d.s[0] += total.statements?.covered||0; d.s[1] += total.statements?.total||0;
+              d.b[0] += total.branches?.covered||0;   d.b[1] += total.branches?.total||0;
+              d.f[0] += total.functions?.covered||0;  d.f[1] += total.functions?.total||0;
+              d.l[0] += total.lines?.covered||0;      d.l[1] += total.lines?.total||0;
+            }
+
+            const pct = ([c,t]) => t ? Math.round(c/t*100)+'%' : '—';
+            const ico = ([c,t]) => !t ? '⚪' : (c/t>=0.8 ? '🟢' : c/t>=0.6 ? '🟡' : '🔴');
+
+            const order = ['Auth','User','AI','Payment','Voyage','Gateway','Web Client'];
+            const rows = order.filter(s=>svcs[s]).map(s => {
+              const d = svcs[s];
+              return `| ${ico(d.l)} **${s}** | ${pct(d.s)} | ${pct(d.b)} | ${pct(d.f)} | ${pct(d.l)} |`;
+            });
+
+            const g = { s:[0,0], b:[0,0], f:[0,0], l:[0,0] };
+            for (const d of Object.values(svcs)) {
+              g.s[0]+=d.s[0]; g.s[1]+=d.s[1]; g.b[0]+=d.b[0]; g.b[1]+=d.b[1];
+              g.f[0]+=d.f[0]; g.f[1]+=d.f[1]; g.l[0]+=d.l[0]; g.l[1]+=d.l[1];
+            }
+            rows.push(`| ${ico(g.l)} **Total** | **${pct(g.s)}** | **${pct(g.b)}** | **${pct(g.f)}** | **${pct(g.l)}** |`);
+
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '## 📊 Coverage Report',
+              '',
+              '| Service | Stmts | Branch | Funcs | Lines |',
+              '|---------|-------|--------|-------|-------|',
+              ...rows,
+              '',
+              `_Run [#${context.runId}](${runUrl}) · branch \`${{ needs.parse-context.outputs.branch }}\`_`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes('## 📊 Coverage Report'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              });
+            }
 
       - name: Create coverage summary
         run: |
