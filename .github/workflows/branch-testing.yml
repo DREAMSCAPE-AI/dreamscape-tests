@@ -495,9 +495,9 @@ jobs:
           echo "📊 Generating coverage report for branch ${{ needs.parse-context.outputs.branch }}"
           npm run report:coverage || echo "Coverage report generation failed"
 
-      - name: Post coverage comment to PR
+      - name: Generate coverage table & post PR comment
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
+        if: always()
         with:
           script: |
             const fs = require('fs');
@@ -514,7 +514,6 @@ jobs:
               return out;
             }
 
-            // Map coverage subdir → service label
             const svcMap = {
               auth: 'Auth', test002: 'Auth', test003: 'Auth', test004: 'Auth',
               user: 'User',
@@ -523,7 +522,7 @@ jobs:
               us009: 'Voyage', us010: 'Voyage', us011: 'Voyage', us012: 'Voyage',
               us013: 'Voyage', us014: 'Voyage', us015: 'Voyage',
               gateway: 'Gateway',
-              coverage: 'Web Client',
+              'web-client': 'Web Client',
             };
 
             const svcs = {};
@@ -569,6 +568,11 @@ jobs:
               `_Run [#${context.runId}](${runUrl}) · branch \`${{ needs.parse-context.outputs.branch }}\`_`,
             ].join('\n');
 
+            // Always write to job summary (visible in every run)
+            await core.summary.addRaw(body).write();
+
+            // Post PR comment only on pull_request events
+            if (context.eventName !== 'pull_request') return;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: context.issue.number,
@@ -585,30 +589,6 @@ jobs:
                 issue_number: context.issue.number, body,
               });
             }
-
-      - name: Create coverage summary
-        run: |
-          cat > coverage-summary.md << 'EOF'
-          # 📊 Coverage Report
-          
-          **Branch:** `${{ needs.parse-context.outputs.branch }}`  
-          **Source Repository:** `${{ needs.parse-context.outputs.source_repo }}`  
-          **Commit:** `${{ needs.parse-context.outputs.source_sha }}`
-          
-          ## Test Results
-          - ✅ Unit Tests: Completed
-          - ✅ Integration Tests: Completed  
-          - ✅ E2E Tests: Completed
-          
-          ## Coverage by Service
-          - Auth Service: Coverage data available in Codecov
-          - User Service: Coverage data available in Codecov
-          - AI Service: Coverage data available in Codecov
-          - Payment Service: Coverage data available in Codecov
-          - Voyage Service: Coverage data available in Codecov
-          
-          View detailed coverage at: https://codecov.io/gh/${{ env.ORG }}/dreamscape-tests
-          EOF
 
       - name: Upload coverage summary
         uses: actions/upload-artifact@v4
