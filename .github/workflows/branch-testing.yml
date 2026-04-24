@@ -383,7 +383,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies
         run: |
@@ -409,7 +409,7 @@ jobs:
           fi
           echo "📦 Building @dreamscape/db..."
           cd ../dreamscape-services/db
-          npm ci 2>&1 | tail -3
+          npm install --include=dev 2>&1 | tail -3
           npx prisma generate
           npx prisma db push --accept-data-loss
           npm run build
@@ -427,9 +427,13 @@ jobs:
               echo "  ⚠️ $name: directory not found — skipping"; return 0
             fi
             echo "  → $name"
-            (cd "$dir" && npm ci 2>&1 | tail -2 && npm run build 2>&1 | tail -3) \
-              && echo "    ✅ $name built" \
-              || echo "    ⚠️ $name build failed (continuing)"
+            local log="/tmp/build-$name.log"
+            if (cd "$dir" && npm install --include=dev > "$log" 2>&1 && npm run build >> "$log" 2>&1); then
+              echo "    ✅ $name built"
+            else
+              echo "    ⚠️ $name build failed — last lines:"
+              tail -10 "$log"
+            fi
           }
 
           build_svc "../dreamscape-services/auth"    "auth"
@@ -474,6 +478,7 @@ jobs:
               echo "  🚀 $name started (port $port, pid $!)"
             else
               echo "  ⚠️ $name: $dir/$entry not found — skipping"
+              ls "$dir/dist/" 2>/dev/null || echo "    (no dist/ directory)"
             fi
           }
 
@@ -484,26 +489,18 @@ jobs:
           start_svc "../dreamscape-services/ai"      3005 dist/server.js ai
           start_svc "../dreamscape-frontend/gateway" 3000 dist/server.js gateway
 
-          echo "⏳ Waiting for services to be ready (up to 60s each)..."
+          echo "⏳ Waiting 20s for services to initialise..."
+          sleep 20
 
-          wait_svc() {
-            local name="$1" port="$2"
-            for i in $(seq 1 30); do
-              if timeout 1 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
-                echo "  ✅ $name (port $port) ready after $((i*2))s"; return 0
-              fi
-              sleep 2
-            done
-            echo "  ⚠️ $name (port $port) did not respond — last logs:"
-            tail -20 /tmp/svc-logs/$name.log 2>/dev/null || echo "(no log)"
-          }
-
-          wait_svc auth    3001
-          wait_svc user    3002
-          wait_svc voyage  3003
-          wait_svc payment 3004
-          wait_svc ai      3005
-          wait_svc gateway 3000
+          for svc_port in "auth:3001" "user:3002" "voyage:3003" "payment:3004" "ai:3005" "gateway:3000"; do
+            name="${svc_port%%:*}"; port="${svc_port##*:}"
+            if timeout 1 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
+              echo "  ✅ $name (port $port) ready"
+            else
+              echo "  ⚠️ $name (port $port) not responding — logs:"
+              tail -20 /tmp/svc-logs/$name.log 2>/dev/null || echo "(no log)"
+            fi
+          done
 
       - name: Run integration tests
         env:
