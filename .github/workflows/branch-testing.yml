@@ -430,11 +430,11 @@ jobs:
             cd -
           fi
 
-      - name: Install and build microservices
+      - name: Install microservices
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
         run: |
-          # Même pattern que le step "Install service dependencies" de unit-tests,
-          # appliqué à tous les services pour pouvoir les démarrer ensuite
-          install_and_build() {
+          install_svc() {
             local dir="$1" name="$2"
             if [ ! -d "$dir" ] || [ ! -f "$dir/package.json" ]; then
               echo "  ⚠️ $name: not found — skipping"; return 0
@@ -442,67 +442,76 @@ jobs:
             echo "  → $name"
             cd "$dir"
             if [ -f "package-lock.json" ]; then npm ci; elif [ -f "yarn.lock" ]; then yarn install --frozen-lockfile; else npm install; fi
-            npm run build --if-present || echo "    ⚠️ $name build had errors, continuing"
+            # Generate prisma client si le service a son propre @prisma/client
+            if [ -f "node_modules/.bin/prisma" ]; then
+              npx prisma generate --schema=../db/prisma/schema.prisma 2>/dev/null \
+                || npx prisma generate 2>/dev/null \
+                || true
+            fi
             cd -
           }
 
-          install_and_build "../dreamscape-services/auth"    "auth"
-          install_and_build "../dreamscape-services/user"    "user"
-          install_and_build "../dreamscape-services/voyage"  "voyage"
-          install_and_build "../dreamscape-services/payment" "payment"
-          install_and_build "../dreamscape-services/ai"      "ai"
-          install_and_build "../dreamscape-frontend/gateway" "gateway"
+          install_svc "../dreamscape-services/auth"    "auth"
+          install_svc "../dreamscape-services/user"    "user"
+          install_svc "../dreamscape-services/voyage"  "voyage"
+          install_svc "../dreamscape-services/payment" "payment"
+          install_svc "../dreamscape-services/ai"      "ai"
+          install_svc "../dreamscape-frontend/gateway" "gateway"
 
-      - name: Start microservices
-        env:
-          NODE_ENV: test
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
-          REDIS_URL: redis://localhost:6379
-          MONGODB_URI: mongodb://localhost:27017/dreamscape_test
-          MONGODB_URL: mongodb://localhost:27017/dreamscape_test
-          JWT_SECRET: ci-test-jwt-secret-must-be-at-least-32-chars
-          JWT_EXPIRES_IN: 7d
-          CORS_ORIGIN: "*"
-          REDIS_ENABLED: "false"
-          AMADEUS_API_KEY: test_dummy
-          AMADEUS_API_SECRET: test_dummy
-          STRIPE_SECRET_KEY: sk_test_dummy_key_for_ci
-          STRIPE_PUBLISHABLE_KEY: pk_test_dummy_key_for_ci
-          STRIPE_WEBHOOK_SECRET: whsec_dummy_for_ci
-          OPENAI_API_KEY: sk-test-dummy-key-for-ci
-          KAFKA_BROKERS: localhost:9092
-          AUTH_SERVICE_URL: http://localhost:3001
-          USER_SERVICE_URL: http://localhost:3002
-          VOYAGE_SERVICE_URL: http://localhost:3003
-          PAYMENT_SERVICE_URL: http://localhost:3004
-          AI_SERVICE_URL: http://localhost:3005
-          GATEWAY_PORT: "3000"
+      - name: Start microservices via tsx
         run: |
           mkdir -p /tmp/svc-logs
 
-          start_svc() {
-            local dir="$1" port="$2" filename="$3" name="$4"
-            # Le rootDir de tsc peut varier — chercher le fichier compilé dans tout dist/
-            local entry
-            entry=$(find "$dir/dist" -name "$filename" 2>/dev/null | head -1)
-            if [ -n "$entry" ]; then
-              PORT=$port node "$entry" >> /tmp/svc-logs/$name.log 2>&1 &
-              echo "  🚀 $name (port $port, pid $!, $entry)"
-            else
-              echo "  ⚠️ $name: $filename introuvable dans dist/"
-              find "$dir/dist" -name "*.js" 2>/dev/null | head -5 || echo "    (dist/ vide ou absent)"
-            fi
+          write_ci_env() {
+            local dir="$1" f="$dir/.env"
+            printf '%s\n' \
+              "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dreamscape_test" \
+              "REDIS_URL=redis://localhost:6379" \
+              "MONGODB_URI=mongodb://localhost:27017/dreamscape_test" \
+              "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" \
+              "NODE_ENV=test" \
+              "JWT_SECRET=ci-test-jwt-secret-must-be-at-least-32-chars" \
+              "JWT_EXPIRES_IN=7d" \
+              "CORS_ORIGIN=*" \
+              "REDIS_ENABLED=false" \
+              "AMADEUS_API_KEY=test_dummy" \
+              "AMADEUS_API_SECRET=test_dummy" \
+              "STRIPE_SECRET_KEY=sk_test_dummy_key_for_ci" \
+              "STRIPE_PUBLISHABLE_KEY=pk_test_dummy_key_for_ci" \
+              "STRIPE_WEBHOOK_SECRET=whsec_dummy_for_ci" \
+              "OPENAI_API_KEY=sk-test-dummy-key-for-ci" \
+              "KAFKA_BROKERS=localhost:9092" \
+              "AUTH_SERVICE_URL=http://localhost:3001" \
+              "USER_SERVICE_URL=http://localhost:3002" \
+              "VOYAGE_SERVICE_URL=http://localhost:3003" \
+              "PAYMENT_SERVICE_URL=http://localhost:3004" \
+              "AI_SERVICE_URL=http://localhost:3005" \
+              > "$f"
           }
 
-          start_svc "../dreamscape-services/auth"    3001 server.js auth
-          start_svc "../dreamscape-services/user"    3002 server.js user
-          start_svc "../dreamscape-services/voyage"  3003 server.js voyage
-          start_svc "../dreamscape-services/payment" 3004 index.js  payment
-          start_svc "../dreamscape-services/ai"      3005 server.js ai
-          start_svc "../dreamscape-frontend/gateway" 3000 server.js gateway
+          start_svc() {
+            local dir="$1" port="$2" main="$3" name="$4"
+            local tsx="$dir/node_modules/.bin/tsx"
+            if [ ! -f "$dir/$main" ]; then
+              echo "  skip $name ($main introuvable)"; return 0
+            fi
+            if [ ! -f "$tsx" ]; then
+              echo "  skip $name (tsx absent)"; return 0
+            fi
+            write_ci_env "$dir"
+            (cd "$dir" && PORT=$port "$tsx" "$main") >> /tmp/svc-logs/$name.log 2>&1 &
+            echo "  🚀 $name (port $port, pid $!)"
+          }
 
-          echo "⏳ Waiting 20s for services to initialise..."
-          sleep 20
+          start_svc "../dreamscape-services/auth"    3001 src/server.ts auth
+          start_svc "../dreamscape-services/user"    3002 src/server.ts user
+          start_svc "../dreamscape-services/voyage"  3003 src/server.ts voyage
+          start_svc "../dreamscape-services/payment" 3004 src/index.ts  payment
+          start_svc "../dreamscape-services/ai"      3005 src/server.ts ai
+          start_svc "../dreamscape-frontend/gateway" 3000 src/server.ts gateway
+
+          echo "⏳ Waiting 25s for services to initialise..."
+          sleep 25
 
           for svc_port in "auth:3001" "user:3002" "voyage:3003" "payment:3004" "ai:3005" "gateway:3000"; do
             name="${svc_port%%:*}"; port="${svc_port##*:}"
