@@ -400,20 +400,23 @@ jobs:
           echo "REDIS_URL=redis://localhost:6379" >> .env
           echo "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" >> .env
 
-      - name: Build @dreamscape/db + push schema
+      - name: Build shared packages (@dreamscape/db & @dreamscape/kafka)
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
         run: |
-          if [ ! -d "../dreamscape-services/db" ]; then
-            echo "⚠️ dreamscape-services/db not found — skipping"; exit 0
+          # @dreamscape/db — Prisma client + schema push
+          if [ -d "../dreamscape-services/db" ]; then
+            echo "📦 Building @dreamscape/db..."
+            (cd ../dreamscape-services/db && npm install --include=dev 2>&1 | tail -3 && npx prisma generate && npx prisma db push --accept-data-loss && npm run build)
+            echo "✅ @dreamscape/db ready"
           fi
-          echo "📦 Building @dreamscape/db..."
-          cd ../dreamscape-services/db
-          npm install --include=dev 2>&1 | tail -3
-          npx prisma generate
-          npx prisma db push --accept-data-loss
-          npm run build
-          echo "✅ @dreamscape/db ready"
+
+          # @dreamscape/kafka — shared Kafka utilities (required by all services)
+          if [ -d "../dreamscape-services/shared" ]; then
+            echo "📦 Building @dreamscape/kafka..."
+            (cd ../dreamscape-services/shared && npm install --include=dev 2>&1 | tail -3 && npm run build)
+            echo "✅ @dreamscape/kafka ready"
+          fi
 
       - name: Build microservices
         env:
