@@ -444,7 +444,7 @@ jobs:
           const total   = parseInt(process.env.INT_TOTAL  || '0', 10);
           const perPair = pairs.length > 0 ? Math.round(total / pairs.length) : 0;
           const results = pairs.map(p => ({ ...p, status, passed: perPair, failed: 0, total: perPair }));
-          require('fs').writeFileSync('n2n-results.json', JSON.stringify(results));
+          require('fs').writeFileSync('n2n-results.json', JSON.stringify({ pairs: results, passed, failed, total }));
           "
         env:
           INTEGRATION_STATUS: ${{ job.status }}
@@ -603,33 +603,35 @@ jobs:
               unitRows.push(`| ${ico} **${unitLabels[comp]}** | ${status === 'success' ? 'Pass' : status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
             }
 
-            // ── Section 2 : N-to-N Integration ───────────────────────────────
+            // ── Sections 2 & 3 : N-to-N + Integration ────────────────────────
             const n2nRows = [];
             const n2nFile = 'all-n2n/n2n-results.json';
-            if (fs.existsSync(n2nFile)) {
-              let pairs = [];
-              try { pairs = JSON.parse(fs.readFileSync(n2nFile,'utf8')); } catch {}
-              for (const p of pairs) {
-                const ico = p.status === 'success' ? '✅' : p.status === 'failure' ? '❌' : '⚪';
-                const count = (p.total > 0) ? `${p.passed}/${p.total}` : '—';
-                const failNote = (p.failed > 0) ? ` _(${p.failed} failed)_` : '';
-                n2nRows.push(`| ${ico} **${p.name}** | ${p.status === 'success' ? 'Pass' : p.status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
-              }
-            }
-
-            // ── Section 3 : Integration (DR-612-617) ─────────────────────────
-            // Status inferred from n2n-results (same job)
-            let intStatus = 'skipped';
+            let intStatus = 'skipped', intPassed = 0, intFailed = 0, intTotal = 0;
             if (fs.existsSync(n2nFile)) {
               try {
-                const pairs = JSON.parse(fs.readFileSync(n2nFile,'utf8'));
-                if (pairs.length > 0) intStatus = pairs[0].status;
+                const raw = JSON.parse(fs.readFileSync(n2nFile,'utf8'));
+                // Support both old format (array) and new format ({pairs, passed, failed, total})
+                const pairs = Array.isArray(raw) ? raw : (raw.pairs || []);
+                if (!Array.isArray(raw)) {
+                  intPassed = raw.passed || 0;
+                  intFailed = raw.failed || 0;
+                  intTotal  = raw.total  || 0;
+                }
+                for (const p of pairs) {
+                  const ico = p.status === 'success' ? '✅' : p.status === 'failure' ? '❌' : '⚪';
+                  const count = (p.total > 0) ? `${p.passed}/${p.total}` : '—';
+                  const failNote = (p.failed > 0) ? ` _(${p.failed} failed)_` : '';
+                  n2nRows.push(`| ${ico} **${p.name}** | ${p.status === 'success' ? 'Pass' : p.status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
+                  if (pairs.length > 0) intStatus = pairs[0].status;
+                }
               } catch {}
             }
-            const intIco = intStatus === 'success' ? '✅' : intStatus === 'failure' ? '❌' : '⚪';
+            const intIco   = intStatus === 'success' ? '✅' : intStatus === 'failure' ? '❌' : '⚪';
             const intLabel = intStatus === 'success' ? 'Pass' : intStatus === 'failure' ? 'Fail' : 'Skip';
-            const intRows = [
-              `| ${intIco} **Cross-service API (DR-612-617)** | ${intLabel} |`,
+            const intCount = intTotal > 0 ? `${intPassed}/${intTotal}` : '—';
+            const intFail  = intFailed > 0 ? ` _(${intFailed} failed)_` : '';
+            const intRows  = [
+              `| ${intIco} **Cross-service API (DR-612-617)** | ${intLabel} | ${intCount}${intFail} |`,
             ];
 
             function findFiles(dir, name) {
@@ -738,8 +740,8 @@ jobs:
               ...(n2nRows.length ? n2nRows : ['| ⚪ *(services not available)* | Skip |']),
               '',
               '### Integration Tests (DR-612-617)',
-              '| Suite | Status |',
-              '|-------|--------|',
+              '| Suite | Status | Tests |',
+              '|-------|--------|-------|',
               ...intRows,
               '',
               '---',
