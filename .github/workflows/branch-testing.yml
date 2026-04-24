@@ -400,52 +400,50 @@ jobs:
           echo "REDIS_URL=redis://localhost:6379" >> .env
           echo "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" >> .env
 
-      - name: Build shared packages (@dreamscape/db & @dreamscape/kafka)
+      - name: Build shared packages
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
         run: |
-          # @dreamscape/db — Prisma client + schema push
+          # Même logique que le job unit-tests — Build @dreamscape/db
           if [ -d "../dreamscape-services/db" ]; then
-            echo "📦 Building @dreamscape/db..."
-            (cd ../dreamscape-services/db && npm install --include=dev 2>&1 | tail -3 && npx prisma generate && npx prisma db push --accept-data-loss && npm run build)
-            echo "✅ @dreamscape/db ready"
+            cd ../dreamscape-services/db
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npx prisma generate
+            npx prisma db push --accept-data-loss
+            npm run build --if-present
+            cd -
           fi
 
-          # @dreamscape/kafka — shared Kafka utilities (required by all services)
-          if [ -d "../dreamscape-services/shared" ]; then
-            echo "📦 Building @dreamscape/kafka..."
-            (cd ../dreamscape-services/shared && npm install --include=dev 2>&1 | tail -3 && npm run build)
-            echo "✅ @dreamscape/kafka ready"
+          # Build @dreamscape/kafka (même chemin que unit-tests)
+          if [ -d "../dreamscape-services/shared/kafka" ]; then
+            cd ../dreamscape-services/shared/kafka
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npm run build --if-present
+            cd -
           fi
 
-      - name: Build microservices
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
+      - name: Install and build microservices
         run: |
-          echo "🔨 Building microservices..."
-
-          build_svc() {
+          # Même pattern que le step "Install service dependencies" de unit-tests,
+          # appliqué à tous les services pour pouvoir les démarrer ensuite
+          install_and_build() {
             local dir="$1" name="$2"
             if [ ! -d "$dir" ] || [ ! -f "$dir/package.json" ]; then
-              echo "  ⚠️ $name: directory not found — skipping"; return 0
+              echo "  ⚠️ $name: not found — skipping"; return 0
             fi
             echo "  → $name"
-            local log="/tmp/build-$name.log"
-            if (cd "$dir" && npm install --include=dev > "$log" 2>&1 && npm run build >> "$log" 2>&1); then
-              echo "    ✅ $name built"
-            else
-              echo "    ⚠️ $name build failed — last lines:"
-              tail -10 "$log"
-            fi
+            cd "$dir"
+            if [ -f "package-lock.json" ]; then npm ci; elif [ -f "yarn.lock" ]; then yarn install --frozen-lockfile; else npm install; fi
+            npm run build --if-present || echo "    ⚠️ $name build had errors, continuing"
+            cd -
           }
 
-          build_svc "../dreamscape-services/auth"    "auth"
-          build_svc "../dreamscape-services/user"    "user"
-          build_svc "../dreamscape-services/voyage"  "voyage"
-          build_svc "../dreamscape-services/payment" "payment"
-          build_svc "../dreamscape-services/ai"      "ai"
-          build_svc "../dreamscape-frontend/gateway" "gateway"
-          echo "✅ Build phase done"
+          install_and_build "../dreamscape-services/auth"    "auth"
+          install_and_build "../dreamscape-services/user"    "user"
+          install_and_build "../dreamscape-services/voyage"  "voyage"
+          install_and_build "../dreamscape-services/payment" "payment"
+          install_and_build "../dreamscape-services/ai"      "ai"
+          install_and_build "../dreamscape-frontend/gateway" "gateway"
 
       - name: Start microservices
         env:
