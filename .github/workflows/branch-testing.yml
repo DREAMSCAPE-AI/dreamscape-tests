@@ -371,7 +371,7 @@ jobs:
         ports:
           - 27017:27017
       kafka:
-        image: bitnami/kafka:3.6
+        image: bitnami/kafka:latest
         env:
           KAFKA_CFG_NODE_ID: 0
           KAFKA_CFG_PROCESS_ROLES: controller,broker
