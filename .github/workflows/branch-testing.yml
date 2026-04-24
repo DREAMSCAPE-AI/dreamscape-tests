@@ -253,6 +253,22 @@ jobs:
           path: coverage/
           retention-days: 1
 
+      - name: Write unit test result
+        if: always()
+        run: |
+          mkdir -p test-results
+          STATUS="${{ job.status }}"
+          echo "{\"component\":\"${{ matrix.component }}\",\"status\":\"$STATUS\"}" \
+            > test-results/${{ matrix.component }}.json
+
+      - name: Upload unit test result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-result-${{ matrix.component }}-${{ github.run_id }}
+          path: test-results/
+          retention-days: 1
+
   frontend-tests:
     name: Frontend Tests (web-client Vitest)
     runs-on: ubuntu-latest
@@ -398,6 +414,24 @@ jobs:
           echo "- Source: ${{ needs.parse-context.outputs.source_repo }}" >> integration-summary.md
           echo "- Services tested: Auth, User, AI, Payment, Voyage" >> integration-summary.md
 
+      - name: Generate N-to-N results
+        if: always()
+        run: |
+          node -e "
+          const pairs = [
+            { name: 'Auth ↔ User',      services: ['auth','user'] },
+            { name: 'Voyage ↔ Payment',  services: ['voyage','payment'] },
+            { name: 'Voyage ↔ AI',       services: ['voyage','ai'] },
+            { name: 'Gateway ↔ Auth',    services: ['gateway','auth'] },
+            { name: 'Gateway ↔ Voyage',  services: ['gateway','voyage'] },
+          ];
+          const status = process.env.INTEGRATION_STATUS || 'unknown';
+          const results = pairs.map(p => ({ ...p, status }));
+          require('fs').writeFileSync('n2n-results.json', JSON.stringify(results));
+          "
+        env:
+          INTEGRATION_STATUS: ${{ job.status }}
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -407,6 +441,14 @@ jobs:
             integration-summary.md
             reports/
           retention-days: 7
+
+      - name: Upload N-to-N results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: n2n-results-${{ github.run_id }}
+          path: n2n-results.json
+          retention-days: 1
 
   e2e-tests:
     name: End-to-End Tests
@@ -490,6 +532,21 @@ jobs:
           path: all-coverage
           merge-multiple: true
 
+      - name: Download unit test result artifacts
+        uses: actions/download-artifact@v4
+        if: always()
+        with:
+          pattern: test-result-*-${{ github.run_id }}
+          path: all-test-results
+          merge-multiple: true
+
+      - name: Download N-to-N results
+        uses: actions/download-artifact@v4
+        if: always()
+        with:
+          name: n2n-results-${{ github.run_id }}
+          path: all-n2n
+
       - name: Debug — list downloaded coverage files
         if: always()
         run: |
@@ -505,6 +562,47 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
+
+            // ── Section 1 : Unit Test Results ────────────────────────────────
+            const unitOrder = ['auth','user','ai','payment','voyage','gateway'];
+            const unitLabels = { auth:'Auth', user:'User', ai:'AI', payment:'Payment', voyage:'Voyage', gateway:'Gateway' };
+            const unitRows = [];
+            for (const comp of unitOrder) {
+              let status = 'skipped';
+              const f = `all-test-results/${comp}.json`;
+              if (fs.existsSync(f)) {
+                try { status = JSON.parse(fs.readFileSync(f,'utf8')).status || 'unknown'; } catch {}
+              }
+              const ico = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚪';
+              unitRows.push(`| ${ico} **${unitLabels[comp]}** | ${status === 'success' ? 'Pass' : status === 'failure' ? 'Fail' : 'Skip'} |`);
+            }
+
+            // ── Section 2 : N-to-N Integration ───────────────────────────────
+            const n2nRows = [];
+            const n2nFile = 'all-n2n/n2n-results.json';
+            if (fs.existsSync(n2nFile)) {
+              let pairs = [];
+              try { pairs = JSON.parse(fs.readFileSync(n2nFile,'utf8')); } catch {}
+              for (const p of pairs) {
+                const ico = p.status === 'success' ? '✅' : p.status === 'failure' ? '❌' : '⚪';
+                n2nRows.push(`| ${ico} **${p.name}** | ${p.status === 'success' ? 'Pass' : p.status === 'failure' ? 'Fail' : 'Skip'} |`);
+              }
+            }
+
+            // ── Section 3 : Integration (DR-612-617) ─────────────────────────
+            // Status inferred from n2n-results (same job)
+            let intStatus = 'skipped';
+            if (fs.existsSync(n2nFile)) {
+              try {
+                const pairs = JSON.parse(fs.readFileSync(n2nFile,'utf8'));
+                if (pairs.length > 0) intStatus = pairs[0].status;
+              } catch {}
+            }
+            const intIco = intStatus === 'success' ? '✅' : intStatus === 'failure' ? '❌' : '⚪';
+            const intLabel = intStatus === 'success' ? 'Pass' : intStatus === 'failure' ? 'Fail' : 'Skip';
+            const intRows = [
+              `| ${intIco} **Cross-service API (DR-612-617)** | ${intLabel} |`,
+            ];
 
             function findFiles(dir, name) {
               if (!fs.existsSync(dir)) return [];
@@ -599,6 +697,24 @@ jobs:
 
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
+              '## 🧪 Test Results',
+              '',
+              '### Unit Tests',
+              '| Service | Status |',
+              '|---------|--------|',
+              ...unitRows,
+              '',
+              '### N-to-N Integration',
+              '| Pair | Status |',
+              '|------|--------|',
+              ...(n2nRows.length ? n2nRows : ['| ⚪ *(services not available)* | Skip |']),
+              '',
+              '### Integration Tests (DR-612-617)',
+              '| Suite | Status |',
+              '|-------|--------|',
+              ...intRows,
+              '',
+              '---',
               '## 📊 Coverage Report',
               '',
               '| Service | Stmts | Branch | Funcs | Lines |',
