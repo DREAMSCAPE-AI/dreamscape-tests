@@ -458,6 +458,9 @@ jobs:
           install_svc "../dreamscape-services/ai"      "ai"
           install_svc "../dreamscape-frontend/gateway" "gateway"
 
+      - name: Install tsx globally
+        run: npm install -g tsx
+
       - name: Start microservices via tsx
         run: |
           mkdir -p /tmp/svc-logs
@@ -491,15 +494,20 @@ jobs:
 
           start_svc() {
             local dir="$1" port="$2" main="$3" name="$4"
-            local tsx="$dir/node_modules/.bin/tsx"
-            if [ ! -f "$dir/$main" ]; then
+            local abs_dir tsx
+            abs_dir="$(cd "$dir" 2>/dev/null && pwd)" || { echo "  skip $name (dir not found)"; return 0; }
+            if [ ! -f "$abs_dir/$main" ]; then
               echo "  skip $name ($main introuvable)"; return 0
             fi
+            tsx="$abs_dir/node_modules/.bin/tsx"
             if [ ! -f "$tsx" ]; then
+              tsx="$(which tsx 2>/dev/null || true)"
+            fi
+            if [ -z "$tsx" ]; then
               echo "  skip $name (tsx absent)"; return 0
             fi
-            write_ci_env "$dir"
-            (cd "$dir" && PORT=$port "$tsx" "$main") >> /tmp/svc-logs/$name.log 2>&1 &
+            write_ci_env "$abs_dir"
+            (cd "$abs_dir" && PORT=$port "$tsx" "$main") >> /tmp/svc-logs/$name.log 2>&1 &
             echo "  🚀 $name (port $port, pid $!)"
           }
 
