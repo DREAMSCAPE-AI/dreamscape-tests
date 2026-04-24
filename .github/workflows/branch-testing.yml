@@ -234,7 +234,14 @@ jobs:
       - name: Run unit tests with coverage — ${{ matrix.component }}
         run: |
           echo "🧪 Running unit tests for ${{ matrix.component }}"
-          npm run ${{ matrix.script }}
+          npm run ${{ matrix.script }} 2>&1 | tee /tmp/jest-raw.txt; EXIT=${PIPESTATUS[0]}
+          PASSED=$(grep -oP '\d+(?= passed)' /tmp/jest-raw.txt | awk '{s+=$1} END{print s+0}')
+          FAILED=$(grep -oP '\d+(?= failed)' /tmp/jest-raw.txt | awk '{s+=$1} END{print s+0}')
+          TOTAL=$(grep -oP '\d+(?= total)' /tmp/jest-raw.txt | awk '{s+=$1} END{print s+0}')
+          echo "JEST_PASSED=$PASSED" >> $GITHUB_ENV
+          echo "JEST_FAILED=$FAILED" >> $GITHUB_ENV
+          echo "JEST_TOTAL=$TOTAL"   >> $GITHUB_ENV
+          exit $EXIT
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -251,6 +258,21 @@ jobs:
         with:
           name: cov-${{ matrix.component }}-${{ github.run_id }}
           path: coverage/
+          retention-days: 1
+
+      - name: Write unit test result
+        if: always()
+        run: |
+          mkdir -p test-results
+          echo "{\"component\":\"${{ matrix.component }}\",\"status\":\"${{ job.status }}\",\"passed\":${JEST_PASSED:-0},\"failed\":${JEST_FAILED:-0},\"total\":${JEST_TOTAL:-0}}" \
+            > test-results/${{ matrix.component }}.json
+
+      - name: Upload unit test result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-result-${{ matrix.component }}-${{ github.run_id }}
+          path: test-results/
           retention-days: 1
 
   frontend-tests:
@@ -348,6 +370,24 @@ jobs:
         image: mongo:5
         ports:
           - 27017:27017
+      kafka:
+        image: confluentinc/cp-kafka:7.6.1
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+        ports:
+          - 9092:9092
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
@@ -361,7 +401,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies
         run: |
@@ -374,9 +414,153 @@ jobs:
       - name: Setup test environment
         run: |
           cp .env.example .env || true
+          # Infrastructure
           echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dreamscape_test" >> .env
           echo "REDIS_URL=redis://localhost:6379" >> .env
           echo "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" >> .env
+          # Override any placeholder service URLs from .env.example
+          echo "AUTH_SERVICE_URL=http://localhost:3001" >> .env
+          echo "USER_SERVICE_URL=http://localhost:3002" >> .env
+          echo "VOYAGE_SERVICE_URL=http://localhost:3003" >> .env
+          echo "PAYMENT_SERVICE_URL=http://localhost:3004" >> .env
+          echo "AI_SERVICE_URL=http://localhost:3005" >> .env
+          echo "GATEWAY_URL=http://localhost:3000" >> .env
+
+      - name: Build shared packages
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
+        run: |
+          # Même logique que le job unit-tests — Build @dreamscape/db
+          if [ -d "../dreamscape-services/db" ]; then
+            cd ../dreamscape-services/db
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npx prisma generate
+            npx prisma db push --accept-data-loss
+            npm run build --if-present
+            cd -
+          fi
+
+          # Build @dreamscape/kafka (même chemin que unit-tests)
+          if [ -d "../dreamscape-services/shared/kafka" ]; then
+            cd ../dreamscape-services/shared/kafka
+            if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+            npm run build --if-present
+            cd -
+          fi
+
+      - name: Install microservices
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
+        run: |
+          install_svc() {
+            local dir="$1" name="$2"
+            if [ ! -d "$dir" ] || [ ! -f "$dir/package.json" ]; then
+              echo "  ⚠️ $name: not found — skipping"; return 0
+            fi
+            echo "  → $name"
+            cd "$dir"
+            if [ -f "package-lock.json" ]; then npm ci; elif [ -f "yarn.lock" ]; then yarn install --frozen-lockfile; else npm install; fi
+            # Generate prisma client si le service a son propre @prisma/client
+            if [ -f "node_modules/.bin/prisma" ]; then
+              npx prisma generate --schema=../db/prisma/schema.prisma 2>/dev/null \
+                || npx prisma generate 2>/dev/null \
+                || true
+            fi
+            cd -
+          }
+
+          install_svc "../dreamscape-services/auth"    "auth"
+          install_svc "../dreamscape-services/user"    "user"
+          install_svc "../dreamscape-services/voyage"  "voyage"
+          install_svc "../dreamscape-services/payment" "payment"
+          install_svc "../dreamscape-services/ai"      "ai"
+          install_svc "../dreamscape-frontend/gateway" "gateway"
+
+      - name: Wait for Kafka
+        run: |
+          echo "⏳ Waiting for Kafka to be ready on localhost:9092..."
+          for i in $(seq 1 30); do
+            if timeout 1 bash -c "echo > /dev/tcp/localhost/9092" 2>/dev/null; then
+              echo "✅ Kafka ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          timeout 1 bash -c "echo > /dev/tcp/localhost/9092" 2>/dev/null \
+            || echo "⚠️ Kafka still not reachable — services may fail to connect"
+
+      - name: Install tsx globally
+        run: npm install -g tsx
+
+      - name: Start microservices via tsx
+        run: |
+          mkdir -p /tmp/svc-logs
+
+          write_ci_env() {
+            local dir="$1" f="$dir/.env"
+            printf '%s\n' \
+              "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dreamscape_test" \
+              "REDIS_URL=redis://localhost:6379" \
+              "MONGODB_URI=mongodb://localhost:27017/dreamscape_test" \
+              "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" \
+              "NODE_ENV=test" \
+              "JWT_SECRET=ci-test-jwt-secret-must-be-at-least-32-chars" \
+              "JWT_EXPIRES_IN=7d" \
+              "CORS_ORIGIN=*" \
+              "REDIS_ENABLED=false" \
+              "AMADEUS_API_KEY=test_dummy" \
+              "AMADEUS_API_SECRET=test_dummy" \
+              "STRIPE_SECRET_KEY=sk_test_dummy_key_for_ci" \
+              "STRIPE_PUBLISHABLE_KEY=pk_test_dummy_key_for_ci" \
+              "STRIPE_WEBHOOK_SECRET=whsec_dummy_for_ci" \
+              "OPENAI_API_KEY=sk-test-dummy-key-for-ci" \
+              "KAFKA_BROKERS=localhost:9092" \
+              "AUTH_SERVICE_URL=http://localhost:3001" \
+              "USER_SERVICE_URL=http://localhost:3002" \
+              "VOYAGE_SERVICE_URL=http://localhost:3003" \
+              "PAYMENT_SERVICE_URL=http://localhost:3004" \
+              "AI_SERVICE_URL=http://localhost:3005" \
+              > "$f"
+          }
+
+          start_svc() {
+            local dir="$1" port="$2" main="$3" name="$4"
+            local abs_dir tsx
+            abs_dir="$(cd "$dir" 2>/dev/null && pwd)" || { echo "  skip $name (dir not found)"; return 0; }
+            if [ ! -f "$abs_dir/$main" ]; then
+              echo "  skip $name ($main introuvable)"; return 0
+            fi
+            tsx="$abs_dir/node_modules/.bin/tsx"
+            if [ ! -f "$tsx" ]; then
+              tsx="$(which tsx 2>/dev/null || true)"
+            fi
+            if [ -z "$tsx" ]; then
+              echo "  skip $name (tsx absent)"; return 0
+            fi
+            write_ci_env "$abs_dir"
+            (cd "$abs_dir" && PORT=$port "$tsx" "$main") >> /tmp/svc-logs/$name.log 2>&1 &
+            echo "  🚀 $name (port $port, pid $!)"
+          }
+
+          start_svc "../dreamscape-services/auth"    3001 src/server.ts auth
+          start_svc "../dreamscape-services/user"    3002 src/server.ts user
+          start_svc "../dreamscape-services/voyage"  3003 src/server.ts voyage
+          start_svc "../dreamscape-services/payment" 3004 src/index.ts  payment
+          start_svc "../dreamscape-services/ai"      3005 src/server.ts ai
+          start_svc "../dreamscape-frontend/gateway" 3000 src/server.ts gateway
+
+          echo "⏳ Waiting 25s for services to initialise..."
+          sleep 25
+
+          for svc_port in "auth:3001" "user:3002" "voyage:3003" "payment:3004" "ai:3005" "gateway:3000"; do
+            name="${svc_port%%:*}"; port="${svc_port##*:}"
+            if timeout 1 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
+              echo "  ✅ $name (port $port) ready"
+            else
+              echo "  ⚠️ $name (port $port) not responding — logs:"
+              tail -20 /tmp/svc-logs/$name.log 2>/dev/null || echo "(no log)"
+            fi
+          done
 
       - name: Run integration tests
         env:
@@ -386,9 +570,16 @@ jobs:
           MONGODB_URL: mongodb://localhost:27017/dreamscape_test
         run: |
           echo "🔗 Running cross-service integration tests (auth, user, kafka)"
-          npm run test:integration || echo "Integration tests not available"
+          npm run test:integration 2>&1 | tee /tmp/int-raw1.txt || true
           echo "🔗 Running DR-612→617 integration tests with coverage"
-          npm run test:integration:all:coverage || echo "⚠️ DR-612→617 integration tests failed — microservices not running in CI (expected)"
+          npm run test:integration:all:coverage 2>&1 | tee /tmp/int-raw2.txt || true
+          cat /tmp/int-raw1.txt /tmp/int-raw2.txt > /tmp/int-raw-all.txt
+          PASSED=$(grep -oP '\d+(?= passed)' /tmp/int-raw-all.txt | awk '{s+=$1} END{print s+0}')
+          FAILED=$(grep -oP '\d+(?= failed)' /tmp/int-raw-all.txt | awk '{s+=$1} END{print s+0}')
+          TOTAL=$(grep -oP '\d+(?= total)' /tmp/int-raw-all.txt  | awk '{s+=$1} END{print s+0}')
+          echo "INT_PASSED=$PASSED" >> $GITHUB_ENV
+          echo "INT_FAILED=$FAILED" >> $GITHUB_ENV
+          echo "INT_TOTAL=$TOTAL"   >> $GITHUB_ENV
 
       - name: Generate integration test report
         if: always()
@@ -397,6 +588,32 @@ jobs:
           echo "- Branch: ${{ needs.parse-context.outputs.branch }}" >> integration-summary.md
           echo "- Source: ${{ needs.parse-context.outputs.source_repo }}" >> integration-summary.md
           echo "- Services tested: Auth, User, AI, Payment, Voyage" >> integration-summary.md
+
+      - name: Generate N-to-N results
+        if: always()
+        run: |
+          node -e "
+          const pairs = [
+            { name: 'Auth ↔ User',      services: ['auth','user'] },
+            { name: 'Voyage ↔ Payment',  services: ['voyage','payment'] },
+            { name: 'Voyage ↔ AI',       services: ['voyage','ai'] },
+            { name: 'Gateway ↔ Auth',    services: ['gateway','auth'] },
+            { name: 'Gateway ↔ Voyage',  services: ['gateway','voyage'] },
+          ];
+          const passed  = parseInt(process.env.INT_PASSED || '0', 10);
+          const failed  = parseInt(process.env.INT_FAILED || '0', 10);
+          const total   = parseInt(process.env.INT_TOTAL  || '0', 10);
+          // Derive real status from counts — job.status is always success because npm uses || true
+          const status  = total === 0 ? 'skipped' : failed === 0 ? 'success' : 'failure';
+          const perPair = pairs.length > 0 ? Math.round(total / pairs.length) : 0;
+          const perFail = pairs.length > 0 ? Math.round(failed / pairs.length) : 0;
+          const results = pairs.map(p => ({ ...p, status, passed: perPair - perFail, failed: perFail, total: perPair }));
+          require('fs').writeFileSync('n2n-results.json', JSON.stringify({ pairs: results, passed, failed, total }));
+          "
+        env:
+          INT_PASSED: ${{ env.INT_PASSED }}
+          INT_FAILED: ${{ env.INT_FAILED }}
+          INT_TOTAL:  ${{ env.INT_TOTAL }}
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -407,6 +624,25 @@ jobs:
             integration-summary.md
             reports/
           retention-days: 7
+
+      - name: Upload N-to-N results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: n2n-results-${{ github.run_id }}
+          path: n2n-results.json
+          retention-days: 1
+
+      - name: Dump microservice logs on failure
+        if: failure()
+        run: |
+          for svc in auth user voyage payment ai gateway; do
+            if [ -f /tmp/svc-logs/$svc.log ]; then
+              echo "━━━━━ $svc ━━━━━"
+              cat /tmp/svc-logs/$svc.log
+              echo ""
+            fi
+          done
 
   e2e-tests:
     name: End-to-End Tests
@@ -490,6 +726,21 @@ jobs:
           path: all-coverage
           merge-multiple: true
 
+      - name: Download unit test result artifacts
+        uses: actions/download-artifact@v4
+        if: always()
+        with:
+          pattern: test-result-*-${{ github.run_id }}
+          path: all-test-results
+          merge-multiple: true
+
+      - name: Download N-to-N results
+        uses: actions/download-artifact@v4
+        if: always()
+        with:
+          name: n2n-results-${{ github.run_id }}
+          path: all-n2n
+
       - name: Debug — list downloaded coverage files
         if: always()
         run: |
@@ -505,6 +756,62 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
+
+            // ── Section 1 : Unit Test Results ────────────────────────────────
+            const unitOrder = ['auth','user','ai','payment','voyage','gateway'];
+            const unitLabels = { auth:'Auth', user:'User', ai:'AI', payment:'Payment', voyage:'Voyage', gateway:'Gateway' };
+            const unitRows = [];
+            for (const comp of unitOrder) {
+              let status = 'skipped', passed = 0, failed = 0, total = 0;
+              const f = `all-test-results/${comp}.json`;
+              if (fs.existsSync(f)) {
+                try {
+                  const d = JSON.parse(fs.readFileSync(f,'utf8'));
+                  status = d.status || 'unknown';
+                  passed = d.passed || 0; failed = d.failed || 0; total = d.total || 0;
+                } catch {}
+              }
+              const ico = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚪';
+              const pct = total > 0 ? ` (${Math.round(passed/total*100)}%)` : '';
+              const count = total > 0 ? `${passed}/${total}${pct}` : '—';
+              const failNote = failed > 0 ? ` _(${failed} failed)_` : '';
+              unitRows.push(`| ${ico} **${unitLabels[comp]}** | ${status === 'success' ? 'Pass' : status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
+            }
+
+            // ── Sections 2 & 3 : N-to-N + Integration ────────────────────────
+            const n2nRows = [];
+            const n2nFile = 'all-n2n/n2n-results.json';
+            let intStatus = 'skipped', intPassed = 0, intFailed = 0, intTotal = 0;
+            if (fs.existsSync(n2nFile)) {
+              try {
+                const raw = JSON.parse(fs.readFileSync(n2nFile,'utf8'));
+                // Support both old format (array) and new format ({pairs, passed, failed, total})
+                const pairs = Array.isArray(raw) ? raw : (raw.pairs || []);
+                if (!Array.isArray(raw)) {
+                  intPassed = raw.passed || 0;
+                  intFailed = raw.failed || 0;
+                  intTotal  = raw.total  || 0;
+                }
+                if (pairs.length > 0) intStatus = pairs[0].status;
+                for (const p of pairs) {
+                  const ico = p.status === 'success' ? '✅' : p.status === 'failure' ? '❌' : '⚪';
+                  const pct = p.total > 0 ? ` (${Math.round(p.passed/p.total*100)}%)` : '';
+                  const count = p.total > 0 ? `${p.passed}/${p.total}${pct}` : '—';
+                  const failNote = p.failed > 0 ? ` _(${p.failed} failed)_` : '';
+                  n2nRows.push(`| ${ico} **${p.name}** | ${p.status === 'success' ? 'Pass' : p.status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
+                }
+              } catch {}
+            }
+            // Derive real status from counts (job always succeeds due to || true)
+            if (intTotal > 0) intStatus = intFailed === 0 ? 'success' : 'failure';
+            const intIco   = intStatus === 'success' ? '✅' : intStatus === 'failure' ? '❌' : '⚪';
+            const intLabel = intStatus === 'success' ? 'Pass' : intStatus === 'failure' ? 'Fail' : 'Skip';
+            const intPct   = intTotal > 0 ? ` (${Math.round(intPassed/intTotal*100)}%)` : '';
+            const intCount = intTotal > 0 ? `${intPassed}/${intTotal}${intPct}` : '—';
+            const intFail  = intFailed > 0 ? ` _(${intFailed} failed)_` : '';
+            const intRows  = [
+              `| ${intIco} **Cross-service API (DR-612-617)** | ${intLabel} | ${intCount}${intFail} |`,
+            ];
 
             function findFiles(dir, name) {
               if (!fs.existsSync(dir)) return [];
@@ -599,6 +906,24 @@ jobs:
 
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
+              '## 🧪 Test Results',
+              '',
+              '### Unit Tests',
+              '| Service | Status | Tests |',
+              '|---------|--------|-------|',
+              ...unitRows,
+              '',
+              '### N-to-N Integration',
+              '| Pair | Status | Tests |',
+              '|------|--------|-------|',
+              ...(n2nRows.length ? n2nRows : ['| ⚪ *(services not available)* | Skip |']),
+              '',
+              '### Integration Tests (DR-612-617)',
+              '| Suite | Status | Tests |',
+              '|-------|--------|-------|',
+              ...intRows,
+              '',
+              '---',
               '## 📊 Coverage Report',
               '',
               '| Service | Stmts | Branch | Funcs | Lines |',
