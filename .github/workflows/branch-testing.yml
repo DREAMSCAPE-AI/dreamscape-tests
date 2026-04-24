@@ -234,7 +234,14 @@ jobs:
       - name: Run unit tests with coverage — ${{ matrix.component }}
         run: |
           echo "🧪 Running unit tests for ${{ matrix.component }}"
-          npm run ${{ matrix.script }}
+          npm run ${{ matrix.script }} 2>&1 | tee /tmp/jest-raw.txt; EXIT=${PIPESTATUS[0]}
+          PASSED=$(grep -oP '\d+(?= passed)' /tmp/jest-raw.txt | awk '{s+=$1} END{print s+0}')
+          FAILED=$(grep -oP '\d+(?= failed)' /tmp/jest-raw.txt | awk '{s+=$1} END{print s+0}')
+          TOTAL=$(grep -oP '\d+(?= total)' /tmp/jest-raw.txt | awk '{s+=$1} END{print s+0}')
+          echo "JEST_PASSED=$PASSED" >> $GITHUB_ENV
+          echo "JEST_FAILED=$FAILED" >> $GITHUB_ENV
+          echo "JEST_TOTAL=$TOTAL"   >> $GITHUB_ENV
+          exit $EXIT
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -257,8 +264,7 @@ jobs:
         if: always()
         run: |
           mkdir -p test-results
-          STATUS="${{ job.status }}"
-          echo "{\"component\":\"${{ matrix.component }}\",\"status\":\"$STATUS\"}" \
+          echo "{\"component\":\"${{ matrix.component }}\",\"status\":\"${{ job.status }}\",\"passed\":${JEST_PASSED:-0},\"failed\":${JEST_FAILED:-0},\"total\":${JEST_TOTAL:-0}}" \
             > test-results/${{ matrix.component }}.json
 
       - name: Upload unit test result
@@ -568,13 +574,19 @@ jobs:
             const unitLabels = { auth:'Auth', user:'User', ai:'AI', payment:'Payment', voyage:'Voyage', gateway:'Gateway' };
             const unitRows = [];
             for (const comp of unitOrder) {
-              let status = 'skipped';
+              let status = 'skipped', passed = 0, failed = 0, total = 0;
               const f = `all-test-results/${comp}.json`;
               if (fs.existsSync(f)) {
-                try { status = JSON.parse(fs.readFileSync(f,'utf8')).status || 'unknown'; } catch {}
+                try {
+                  const d = JSON.parse(fs.readFileSync(f,'utf8'));
+                  status = d.status || 'unknown';
+                  passed = d.passed || 0; failed = d.failed || 0; total = d.total || 0;
+                } catch {}
               }
               const ico = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚪';
-              unitRows.push(`| ${ico} **${unitLabels[comp]}** | ${status === 'success' ? 'Pass' : status === 'failure' ? 'Fail' : 'Skip'} |`);
+              const count = total > 0 ? `${passed}/${total}` : '—';
+              const failNote = failed > 0 ? ` _(${failed} failed)_` : '';
+              unitRows.push(`| ${ico} **${unitLabels[comp]}** | ${status === 'success' ? 'Pass' : status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
             }
 
             // ── Section 2 : N-to-N Integration ───────────────────────────────
@@ -700,8 +712,8 @@ jobs:
               '## 🧪 Test Results',
               '',
               '### Unit Tests',
-              '| Service | Status |',
-              '|---------|--------|',
+              '| Service | Status | Tests |',
+              '|---------|--------|-------|',
               ...unitRows,
               '',
               '### N-to-N Integration',
