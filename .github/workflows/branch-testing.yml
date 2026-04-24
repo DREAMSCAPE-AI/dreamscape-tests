@@ -400,6 +400,111 @@ jobs:
           echo "REDIS_URL=redis://localhost:6379" >> .env
           echo "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" >> .env
 
+      - name: Build @dreamscape/db + push schema
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
+        run: |
+          if [ ! -d "../dreamscape-services/db" ]; then
+            echo "⚠️ dreamscape-services/db not found — skipping"; exit 0
+          fi
+          echo "📦 Building @dreamscape/db..."
+          cd ../dreamscape-services/db
+          npm ci 2>&1 | tail -3
+          npx prisma generate
+          npx prisma db push --accept-data-loss
+          npm run build
+          echo "✅ @dreamscape/db ready"
+
+      - name: Build microservices
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
+        run: |
+          echo "🔨 Building microservices..."
+
+          build_svc() {
+            local dir="$1" name="$2"
+            if [ ! -d "$dir" ] || [ ! -f "$dir/package.json" ]; then
+              echo "  ⚠️ $name: directory not found — skipping"; return 0
+            fi
+            echo "  → $name"
+            (cd "$dir" && npm ci 2>&1 | tail -2 && npm run build 2>&1 | tail -3) \
+              && echo "    ✅ $name built" \
+              || echo "    ⚠️ $name build failed (continuing)"
+          }
+
+          build_svc "../dreamscape-services/auth"    "auth"
+          build_svc "../dreamscape-services/user"    "user"
+          build_svc "../dreamscape-services/voyage"  "voyage"
+          build_svc "../dreamscape-services/payment" "payment"
+          build_svc "../dreamscape-services/ai"      "ai"
+          build_svc "../dreamscape-frontend/gateway" "gateway"
+          echo "✅ Build phase done"
+
+      - name: Start microservices
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dreamscape_test
+          REDIS_URL: redis://localhost:6379
+          MONGODB_URI: mongodb://localhost:27017/dreamscape_test
+          MONGODB_URL: mongodb://localhost:27017/dreamscape_test
+          JWT_SECRET: ci-test-jwt-secret-must-be-at-least-32-chars
+          JWT_EXPIRES_IN: 7d
+          CORS_ORIGIN: "*"
+          REDIS_ENABLED: "false"
+          AMADEUS_API_KEY: test_dummy
+          AMADEUS_API_SECRET: test_dummy
+          STRIPE_SECRET_KEY: sk_test_dummy_key_for_ci
+          STRIPE_PUBLISHABLE_KEY: pk_test_dummy_key_for_ci
+          STRIPE_WEBHOOK_SECRET: whsec_dummy_for_ci
+          OPENAI_API_KEY: sk-test-dummy-key-for-ci
+          KAFKA_BROKERS: localhost:9092
+          AUTH_SERVICE_URL: http://localhost:3001
+          USER_SERVICE_URL: http://localhost:3002
+          VOYAGE_SERVICE_URL: http://localhost:3003
+          PAYMENT_SERVICE_URL: http://localhost:3004
+          AI_SERVICE_URL: http://localhost:3005
+          GATEWAY_PORT: "3000"
+        run: |
+          mkdir -p /tmp/svc-logs
+
+          start_svc() {
+            local dir="$1" port="$2" entry="$3" name="$4"
+            if [ -f "$dir/$entry" ]; then
+              PORT=$port node "$dir/$entry" >> /tmp/svc-logs/$name.log 2>&1 &
+              echo "  🚀 $name started (port $port, pid $!)"
+            else
+              echo "  ⚠️ $name: $dir/$entry not found — skipping"
+            fi
+          }
+
+          start_svc "../dreamscape-services/auth"    3001 dist/server.js auth
+          start_svc "../dreamscape-services/user"    3002 dist/server.js user
+          start_svc "../dreamscape-services/voyage"  3003 dist/server.js voyage
+          start_svc "../dreamscape-services/payment" 3004 dist/index.js  payment
+          start_svc "../dreamscape-services/ai"      3005 dist/server.js ai
+          start_svc "../dreamscape-frontend/gateway" 3000 dist/server.js gateway
+
+          echo "⏳ Waiting for services to be ready (up to 60s each)..."
+
+          wait_svc() {
+            local name="$1" port="$2"
+            for i in $(seq 1 30); do
+              if timeout 1 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
+                echo "  ✅ $name (port $port) ready after $((i*2))s"; return 0
+              fi
+              sleep 2
+            done
+            echo "  ⚠️ $name (port $port) did not respond — last logs:"
+            tail -20 /tmp/svc-logs/$name.log 2>/dev/null || echo "(no log)"
+          }
+
+          wait_svc auth    3001
+          wait_svc user    3002
+          wait_svc voyage  3003
+          wait_svc payment 3004
+          wait_svc ai      3005
+          wait_svc gateway 3000
+
       - name: Run integration tests
         env:
           NODE_ENV: test
@@ -470,6 +575,17 @@ jobs:
           name: n2n-results-${{ github.run_id }}
           path: n2n-results.json
           retention-days: 1
+
+      - name: Dump microservice logs on failure
+        if: failure()
+        run: |
+          for svc in auth user voyage payment ai gateway; do
+            if [ -f /tmp/svc-logs/$svc.log ]; then
+              echo "━━━━━ $svc ━━━━━"
+              cat /tmp/svc-logs/$svc.log
+              echo ""
+            fi
+          done
 
   e2e-tests:
     name: End-to-End Tests
