@@ -396,9 +396,17 @@ jobs:
       - name: Setup test environment
         run: |
           cp .env.example .env || true
+          # Infrastructure
           echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dreamscape_test" >> .env
           echo "REDIS_URL=redis://localhost:6379" >> .env
           echo "MONGODB_URL=mongodb://localhost:27017/dreamscape_test" >> .env
+          # Override any placeholder service URLs from .env.example
+          echo "AUTH_SERVICE_URL=http://localhost:3001" >> .env
+          echo "USER_SERVICE_URL=http://localhost:3002" >> .env
+          echo "VOYAGE_SERVICE_URL=http://localhost:3003" >> .env
+          echo "PAYMENT_SERVICE_URL=http://localhost:3004" >> .env
+          echo "AI_SERVICE_URL=http://localhost:3005" >> .env
+          echo "GATEWAY_URL=http://localhost:3000" >> .env
 
       - name: Build shared packages
         env:
@@ -473,22 +481,25 @@ jobs:
           mkdir -p /tmp/svc-logs
 
           start_svc() {
-            local dir="$1" port="$2" entry="$3" name="$4"
-            if [ -f "$dir/$entry" ]; then
-              PORT=$port node "$dir/$entry" >> /tmp/svc-logs/$name.log 2>&1 &
-              echo "  🚀 $name started (port $port, pid $!)"
+            local dir="$1" port="$2" filename="$3" name="$4"
+            # Le rootDir de tsc peut varier — chercher le fichier compilé dans tout dist/
+            local entry
+            entry=$(find "$dir/dist" -name "$filename" 2>/dev/null | head -1)
+            if [ -n "$entry" ]; then
+              PORT=$port node "$entry" >> /tmp/svc-logs/$name.log 2>&1 &
+              echo "  🚀 $name (port $port, pid $!, $entry)"
             else
-              echo "  ⚠️ $name: $dir/$entry not found — skipping"
-              ls "$dir/dist/" 2>/dev/null || echo "    (no dist/ directory)"
+              echo "  ⚠️ $name: $filename introuvable dans dist/"
+              find "$dir/dist" -name "*.js" 2>/dev/null | head -5 || echo "    (dist/ vide ou absent)"
             fi
           }
 
-          start_svc "../dreamscape-services/auth"    3001 dist/server.js auth
-          start_svc "../dreamscape-services/user"    3002 dist/server.js user
-          start_svc "../dreamscape-services/voyage"  3003 dist/server.js voyage
-          start_svc "../dreamscape-services/payment" 3004 dist/index.js  payment
-          start_svc "../dreamscape-services/ai"      3005 dist/server.js ai
-          start_svc "../dreamscape-frontend/gateway" 3000 dist/server.js gateway
+          start_svc "../dreamscape-services/auth"    3001 server.js auth
+          start_svc "../dreamscape-services/user"    3002 server.js user
+          start_svc "../dreamscape-services/voyage"  3003 server.js voyage
+          start_svc "../dreamscape-services/payment" 3004 index.js  payment
+          start_svc "../dreamscape-services/ai"      3005 server.js ai
+          start_svc "../dreamscape-frontend/gateway" 3000 server.js gateway
 
           echo "⏳ Waiting 20s for services to initialise..."
           sleep 20
