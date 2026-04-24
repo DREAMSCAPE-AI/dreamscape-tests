@@ -370,6 +370,19 @@ jobs:
         image: mongo:5
         ports:
           - 27017:27017
+      kafka:
+        image: bitnami/kafka:3.6
+        env:
+          KAFKA_CFG_NODE_ID: 0
+          KAFKA_CFG_PROCESS_ROLES: controller,broker
+          KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+          KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          ALLOW_PLAINTEXT_LISTENER: yes
+        ports:
+          - 9092:9092
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
@@ -457,6 +470,19 @@ jobs:
           install_svc "../dreamscape-services/payment" "payment"
           install_svc "../dreamscape-services/ai"      "ai"
           install_svc "../dreamscape-frontend/gateway" "gateway"
+
+      - name: Wait for Kafka
+        run: |
+          echo "⏳ Waiting for Kafka to be ready on localhost:9092..."
+          for i in $(seq 1 30); do
+            if timeout 1 bash -c "echo > /dev/tcp/localhost/9092" 2>/dev/null; then
+              echo "✅ Kafka ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          timeout 1 bash -c "echo > /dev/tcp/localhost/9092" 2>/dev/null \
+            || echo "⚠️ Kafka still not reachable — services may fail to connect"
 
       - name: Install tsx globally
         run: npm install -g tsx
