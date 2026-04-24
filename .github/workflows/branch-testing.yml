@@ -438,16 +438,17 @@ jobs:
             { name: 'Gateway ↔ Auth',    services: ['gateway','auth'] },
             { name: 'Gateway ↔ Voyage',  services: ['gateway','voyage'] },
           ];
-          const status  = process.env.INTEGRATION_STATUS || 'unknown';
           const passed  = parseInt(process.env.INT_PASSED || '0', 10);
           const failed  = parseInt(process.env.INT_FAILED || '0', 10);
           const total   = parseInt(process.env.INT_TOTAL  || '0', 10);
+          // Derive real status from counts — job.status is always success because npm uses || true
+          const status  = total === 0 ? 'skipped' : failed === 0 ? 'success' : 'failure';
           const perPair = pairs.length > 0 ? Math.round(total / pairs.length) : 0;
-          const results = pairs.map(p => ({ ...p, status, passed: perPair, failed: 0, total: perPair }));
+          const perFail = pairs.length > 0 ? Math.round(failed / pairs.length) : 0;
+          const results = pairs.map(p => ({ ...p, status, passed: perPair - perFail, failed: perFail, total: perPair }));
           require('fs').writeFileSync('n2n-results.json', JSON.stringify({ pairs: results, passed, failed, total }));
           "
         env:
-          INTEGRATION_STATUS: ${{ job.status }}
           INT_PASSED: ${{ env.INT_PASSED }}
           INT_FAILED: ${{ env.INT_FAILED }}
           INT_TOTAL:  ${{ env.INT_TOTAL }}
