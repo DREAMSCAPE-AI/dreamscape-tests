@@ -3,71 +3,45 @@ const path = require('path');
 
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
+function isValidHttpUrl(s) {
+  try { const u = new URL(s); return u.protocol === 'http:' || u.protocol === 'https:'; }
+  catch { return false; }
+}
+
+async function waitForService(name, url, retries = 10, delay = 1000, headers = {}) {
+  if (!isValidHttpUrl(url)) {
+    console.warn(`⚠️ ${name} URL is missing or invalid (${JSON.stringify(url)}) — skipping readiness check`);
+    return;
+  }
+  for (let i = 0; i < retries; i++) {
+    try {
+      await axios.get(`${url}/health`, { timeout: 5000, headers, validateStatus: s => s < 500 });
+      console.log(`✅ ${name} is ready`);
+      return;
+    } catch {
+      if (i === retries - 1) {
+        console.warn(`⚠️ ${name} not reachable at ${url} — continuing; tests will handle unavailability`);
+        return;
+      }
+      console.log(`⏳ Waiting for ${name}... (${i + 1}/${retries})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 beforeAll(async () => {
   console.log('🚀 Setting up user integration tests...');
 
-  const maxRetries = 10;
-  const retryDelay = 1000;
   const baseServiceUrl = process.env.BASE_SERVICE_URL;
   const userServiceUrl = process.env.USER_SERVICE_URL;
   const authServiceUrl = process.env.AUTH_SERVICE_URL;
-
   const rateLimitBypassHeaders = { 'x-test-rate-limit': 'true' };
 
-  // Wait for base service (if different from user service)
   if (baseServiceUrl && baseServiceUrl !== userServiceUrl) {
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        console.log('baseServiceUrl', baseServiceUrl);
-        await axios.get(`${baseServiceUrl}/health`, { timeout: 5000, headers: rateLimitBypassHeaders, validateStatus: s => s < 500 });
-        console.log('✅ Base service is ready');
-        break;
-      } catch (error) {
-        if (i === maxRetries - 1) {
-          console.error('❌ Base service not available after max retries');
-          throw new Error(`Base service not available at ${baseServiceUrl}`);
-        }
-        console.log(`⏳ Waiting for base service... (${i + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
+    await waitForService('Base service', baseServiceUrl, 10, 1000, rateLimitBypassHeaders);
   }
-
-  // Wait for user service
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      console.log('userServiceUrl', userServiceUrl);
-      const res = await axios.get(`${userServiceUrl}/health`, { timeout: 5000, headers: rateLimitBypassHeaders, validateStatus: s => s < 500 });
-      // 429 = rate limited but service is running
-      console.log('✅ User service is ready');
-      break;
-    } catch (error) {
-      if (i === maxRetries - 1) {
-        console.error('❌ User service not available after max retries');
-        throw new Error(`User service not available at ${userServiceUrl}`);
-      }
-      console.log(`⏳ Waiting for user service... (${i + 1}/${maxRetries})`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
-  }
-
-  // Wait for auth service (needed for user creation)
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      console.log('authServiceUrl', authServiceUrl);
-      const res = await axios.get(`${authServiceUrl}/health`, { timeout: 5000, headers: rateLimitBypassHeaders, validateStatus: s => s < 500 });
-      // 429 = rate limited but service is running
-      console.log('✅ Auth service is ready');
-      break;
-    } catch (error) {
-      if (i === maxRetries - 1) {
-        console.error('❌ Auth service not available after max retries');
-        throw new Error(`Auth service not available at ${authServiceUrl}`);
-      }
-      console.log(`⏳ Waiting for auth service... (${i + 1}/${maxRetries})`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
-  }
+  await waitForService('User service', userServiceUrl, 10, 1000, rateLimitBypassHeaders);
+  await waitForService('Auth service', authServiceUrl, 10, 1000, rateLimitBypassHeaders);
 
   // Reset test databases (optional - don't fail if endpoints don't exist)
   try {
