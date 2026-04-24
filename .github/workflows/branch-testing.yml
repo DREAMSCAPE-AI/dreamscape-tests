@@ -599,7 +599,8 @@ jobs:
                 } catch {}
               }
               const ico = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚪';
-              const count = total > 0 ? `${passed}/${total}` : '—';
+              const pct = total > 0 ? ` (${Math.round(passed/total*100)}%)` : '';
+              const count = total > 0 ? `${passed}/${total}${pct}` : '—';
               const failNote = failed > 0 ? ` _(${failed} failed)_` : '';
               unitRows.push(`| ${ico} **${unitLabels[comp]}** | ${status === 'success' ? 'Pass' : status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
             }
@@ -618,18 +619,22 @@ jobs:
                   intFailed = raw.failed || 0;
                   intTotal  = raw.total  || 0;
                 }
+                if (pairs.length > 0) intStatus = pairs[0].status;
                 for (const p of pairs) {
                   const ico = p.status === 'success' ? '✅' : p.status === 'failure' ? '❌' : '⚪';
-                  const count = (p.total > 0) ? `${p.passed}/${p.total}` : '—';
-                  const failNote = (p.failed > 0) ? ` _(${p.failed} failed)_` : '';
+                  const pct = p.total > 0 ? ` (${Math.round(p.passed/p.total*100)}%)` : '';
+                  const count = p.total > 0 ? `${p.passed}/${p.total}${pct}` : '—';
+                  const failNote = p.failed > 0 ? ` _(${p.failed} failed)_` : '';
                   n2nRows.push(`| ${ico} **${p.name}** | ${p.status === 'success' ? 'Pass' : p.status === 'failure' ? 'Fail' : 'Skip'} | ${count}${failNote} |`);
-                  if (pairs.length > 0) intStatus = pairs[0].status;
                 }
               } catch {}
             }
+            // Derive real status from counts (job always succeeds due to || true)
+            if (intTotal > 0) intStatus = intFailed === 0 ? 'success' : 'failure';
             const intIco   = intStatus === 'success' ? '✅' : intStatus === 'failure' ? '❌' : '⚪';
             const intLabel = intStatus === 'success' ? 'Pass' : intStatus === 'failure' ? 'Fail' : 'Skip';
-            const intCount = intTotal > 0 ? `${intPassed}/${intTotal}` : '—';
+            const intPct   = intTotal > 0 ? ` (${Math.round(intPassed/intTotal*100)}%)` : '';
+            const intCount = intTotal > 0 ? `${intPassed}/${intTotal}${intPct}` : '—';
             const intFail  = intFailed > 0 ? ` _(${intFailed} failed)_` : '';
             const intRows  = [
               `| ${intIco} **Cross-service API (DR-612-617)** | ${intLabel} | ${intCount}${intFail} |`,
